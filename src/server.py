@@ -6,107 +6,107 @@ from src.codes import Operation
 from src.client import Client
 import time
 
+
 class Server:
 
     def __init__(self, max_rooms):
 
-       self.clients = {}
+        self.clients = {}
 
-       self.max_rooms = max_rooms
-       self.rooms = [[]]
+        self.max_rooms = max_rooms
+        self.rooms = [[]]
 
-       ####### Server Stuff ###
-       self.buffer_size = 1024
-       self.queue_size = 5
-       self.port = 5001
-       self.host = socket.gethostbyname(socket.gethostname())
-       self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-       self.server.bind((self.host, self.port))
+        ####### Server Stuff ###
+        self.buffer_size = 1024
+        self.queue_size = 5
+        self.port = 5001
+        self.host = socket.gethostbyname(socket.gethostname())
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind((self.host, self.port))
 
-       self.sockets = []
+        self.sockets = []
 
-       ######### Thread Stuff ########
-       self.lock = threading.Lock()
-
+        ######### Thread Stuff ########
+        self.lock = threading.Lock()
 
     def start(self):
 
-       self.server.listen(self.queue_size)
+        self.server.listen(self.queue_size)
 
-       while True:
+        while True:
 
-        socket, address = self.server.accept() #TODO: change this to assing to tuple?
+            a_socket, address = self.server.accept()  #TODO: change this to assing to tuple?
 
+            #receive the object in pickle serialization form( bytes)
+            header_bytes_object = a_socket.recv(self.buffer_size)  #TODO: refactor to use message class
 
-        #receive the object in pickle serialization form( bytes)
-        header_bytes_object = socket.recv(self.buffer_size) #TODO: refactor to use message class
+            #Return the pickled representation of the object obj as a bytes object
+            header_object = pickle.loads(header_bytes_object)
 
-        #Return the pickled representation of the object obj as a bytes object
-        header_object = pickle.loads(header_bytes_object)
+            #then sends the message to get the buffer size need for the coming message
+            payload_buffer = header_object.payload_size
 
+            #store the header's opcode
+            opcode = header_object.opcode
 
-        #then sends the message to get the buffer size need for the coming message
-        payload_buffer = header_object.payload_size
+            #Ensure we receive the handshake message
+            if opcode is not Operation.HELLO:
+                #send a message to the cleint indicating bad handshake
 
-        #store the header's opcode
-        opcode = header_object.opcode
+                #close connection to a_socket
+                pass
 
-        #Ensure we receive the handshake message
-        if opcode is not Operation.HELLO:
-            #send a message to the cleint indicating bad handshake
+            #receive the object in pickle serialization form( bytes)
+            message_bytes_object = a_socket.recv(payload_buffer)
 
-            #close connection to socket
-            pass
+            #Return the pickled representation of the object obj as a bytes object
+            message_object = pickle.loads(message_bytes_object)
 
-        #receive the object in pickle serialization form( bytes)
-        message_bytes_object = socket.recv(payload_buffer)
+            #set the name
+            nickname = message_object.payload
 
-        #Return the pickled representation of the object obj as a bytes object
-        message_object = pickle.loads(message_bytes_object)
+            #ensure the nickname is not alreayd present and add it to our list of Clients
+            if nickname not in self.clients:
+                self.clients[nickname] = Client(a_socket, address, nickname)
 
-        #set the name
-        nickname = message_object.payload
+                #Spin off the thead
+                self.spin_off_thread(self.clients[nickname])
 
-        #ensure the nickname is not alreayd present and add it to our list of Clients
-        if nickname not in self.clients:
-            self.clients[nickname] = Client(socket,address,nickname)
+            else:
 
-            #Spin off the thead
-            self.spin_off_thread(self.clients[nickname])
+                #TODO: send message to client indicating taken username
 
-        else:
+                #TODO: close the connection
+                pass
 
-            #send message to client indicating taken username
+    def worker_func(self, client):
 
-            #close the connection
-            pass
+        while True:
+            try:
+                message_bytes = client.socket.recv(self.buffer_size)
+                if not message_bytes:
+                    break
 
-    def spin_off_thread(self,client):
-        client_thread = threading.Thread(target=worker_func, args=(client))
-        #thread.damon
-        #start thread
-        #return
+                message_object = pickle.loads(message_bytes)
 
-    def worker_func(self,client):
-        pass
+                #TODO: Process the message object here
 
-        #while running
+                #TODO: if its not a valid opcode return errro
 
-        #elif not not running close socket connection/ rmv from clients
+            #TODO: done with task( deincrement queue)
 
-        #check out task
+            except Exception as e:
+                print(f"Error with client {client.nickname}: {e}")
+                break
 
-        #process the task (do the work)
+        with self.lock:
+            del self.clients[client.nickname]
+        client.socket.close()
 
-            #- funcitoins calls for certain task(thread safe)
-
-        #done with task( deincrement queue)
-
-        #crash out
-
-
-
-
+    def spin_off_thread(self, client):
+        client_thread = threading.Thread(target=self.worker_func, args=client)
+        client_thread.daemon = True
+        client_thread.start()
 
     def __del_(self):
         pass
