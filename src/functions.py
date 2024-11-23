@@ -1,4 +1,4 @@
-from src.message import Message
+from message import Message
 
 """
 # Action_map is a dictionary that maps the number of arguments (arg_len) to specific functions.
@@ -18,25 +18,6 @@ else:
     raise ValueError("Invalid argument length when initializing SFTP build")
 """
 
-action_map = {
-    2: lambda: createRoom(),
-    3: lambda: listRooms(),
-    4: lambda: listRoomsResp(),
-    5: lambda: joinRoom(),
-    6: lambda: leaveRoom(),
-    7: lambda: listMembers(),
-    8: lambda: listMembersResp(),
-    9: lambda: sendMsg(),
-    10:lambda: broadcastMsg(),
-    11: lambda: terminate(),
-    12: lambda: privateMsg(),
-    13: lambda: forwardMsg(),
-    14: lambda: forwardMsgQ(),
-    15: lambda: sendFile(),
-    16: lambda: forwardFile(),
-    17: lambda: forwardFileQ(),
-    18: lambda: ping(),
-}
 
 def hello():
     print("Hello function called")  # Implement the actual logic
@@ -91,3 +72,23 @@ def forwardFileQ():
 
 def ping():
     print("Ping function called")  # Implement the actual logic
+
+action_map = {
+    2: createRoom,
+    3: listRooms,
+    4: listRoomsResp,
+    5: joinRoom,
+    6: leaveRoom,
+    7: listMembers,
+    8: listMembersResp,
+    9: sendMsg,
+    10: broadcastMsg,
+    11:  terminate,
+    12:  privateMsg,
+    13:  forwardMsg,
+    14:  forwardMsgQ,
+    15:  sendFile,
+    16:  forwardFile,
+    17:  forwardFileQ,
+    18:  ping,
+}

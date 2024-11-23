@@ -1,10 +1,16 @@
 import pickle
 import socket
 import threading
-from src.message import Header
-from src.codes import Operation
-from src.client import Client
-from src.functions import *
+from message import Header
+from message import Message
+from codes import Operation
+from client import Client
+from functions import *
+
+MAX_PICKLED_HEADER_SIZE = 98
+LOCAL_HOST = "127.0.0.1"
+PORT = 49152
+QUEUE_SIZE = 5
 
 class Server:
 
@@ -19,11 +25,11 @@ class Server:
 
         self.running = True  # Flag to control server loop
 
-        self.header_size = 600;
+        self.header_size = MAX_PICKLED_HEADER_SIZE
         #message buffer size is message dependent!!!!!! LOCAL SCOPE!!!!
-        self.queue_size = 5
-        self.port = 49152 #ephemeral port range - dynamic,temp connections used for client application, safe w/o conflicting service on system
-        self.host = "127.0.0.1" # loopback address: allows computer to communicate with itself without user external network
+        self.queue_size = QUEUE_SIZE
+        self.port = PORT #ephemeral port range - dynamic,temp connections used for client application, safe w/o conflicting service on system
+        self.host = LOCAL_HOST # loopback address: allows computer to communicate with itself without user external network
         self.server = None
 
         self.sockets = []
@@ -42,23 +48,22 @@ class Server:
         #NOTE: I DONT KNOW HOW TIMEOUT WORKS VERY WELL YET
         print(f"Server started on {self.host}:{self.port}") # ?DEBUG?
 
-        while True:
-            try:
-                while self.running:
-                    try:
+        try:
+            while self.running:
+                try:
 
-                        client_socket, client_address = self.server.accept()#accept connect socket, get the socket object, address
+                    client_socket, client_address = self.server.accept()#accept connect socket, get the socket object, address
 
-                        print(f"Connection established with {client_address}")# ?DEBUG?
+                    print(f"Connection established with {client_address}")# ?DEBUG?
 
-                        # Spin off a thread to handle the client. Make it a daemon( Daemon threads are abruptly stopped at shutdown) should't be a problem as no persisitng data????
-                        threading.Thread(target=self.spin_off_thread, args=(client_socket, client_address), daemon=True).start()
+                    # Spin off a thread to handle the client. Make it a daemon( Daemon threads are abruptly stopped at shutdown) should't be a problem as no persisitng data????
+                    threading.Thread(target=self.spin_off_thread, args=(client_socket, client_address), daemon=True).start()
 
-                    # No connection was ready within the timeout, continue the loop
-                    except socket.timeout:
-                        continue
-            finally:
-                self.shutdown()
+                # No connection was ready within the timeout, continue the loop
+                except socket.timeout:
+                    continue
+        finally:
+            self.shutdown()
 
 
     def spin_off_thread(self, client_socket, client_address):
@@ -91,8 +96,13 @@ class Server:
             # receive the handshake header of header_size
             header_bytes_object = client_socket.recv(self.header_size)
 
+            print(f"HEADER BYTES OBJ: {header_bytes_object}")
+
             #load object back through pickle conversion from byte re-assembly
             header_object = pickle.loads(header_bytes_object)
+
+            print(f"Header object: {header_object}")
+            print(f"Header object->opcode: {header_object.opcode}")
 
             #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
             if not isinstance(header_object,Header):
@@ -110,11 +120,14 @@ class Server:
             #get payload size
             payload_buffer = header_object.payload_size
 
-
+            print("DEBUG: waiting to recieve message")
             # Receive the payload (nickname)
             message_bytes_object = client_socket.recv(payload_buffer)
             message_object = pickle.loads(message_bytes_object)
+            print(f"DEBUG: Message object {message_object}") 
             nickname = message_object.payload
+            print(f"DEBUG: Nickname {nickname}") 
+
 
 
             # Ensure the nickname doesn't already exist
@@ -187,18 +200,19 @@ class Server:
                     #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
 
                     #TODO: check if instance in second element of one of action map assosciated opcode operation
-                    if not isinstance(message_object,Message):
+                    if not isinstance(message_object,Message): # message_object, type(action_map[opcode][1])
                         print(f"Bad message object from {client_address}") # ? DEBUG ?
                         return None
-
-                    #read in  the message buffer size
-                        #load message body if exists
-
 
 
                     #process into action mapped function
                         #process r_value of aciton map
                         #SPECIAL: check if its disconnect is call
+                    func_to_run = action_map[header_object.opcode][0] 
+                    result = func_to_run(message_object)
+
+                    if (result is Operation.TERMINATE):
+                        print(f"Terminate operation")
 
                 except socket.timeout:
                     # timeout message
