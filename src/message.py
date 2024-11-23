@@ -1,15 +1,11 @@
 import zlib
 
 
-
-
 class Header:
-    def __init__(self, opcode, payload_size, payload_checksum):
+    def __init__(self, opcode, payload_size, ):
 
         self.opcode = opcode
         self.payload_size = None
-        self.payload_checksum = None
-
 
     def __del__(self):
 
@@ -24,17 +20,18 @@ class Message:
     def __init__(self, opcode, payload):
 
         self.payload  = self.convert_binary(payload) #Transmute the payload into binary funciton and assign
-        payload_size = self.payload_size(self.payload) # calc size of payload
+        self.payload_size = self.size(self.payload) # calc size of payload
 
-        self.header(opcode,payload_size) #construct header
+        self.opcode = opcode
 
     def __del__(self):
 
         self.payload  = None
-        self.header = None
+        self.payload_size = None
+        self.opcode = None
 
     def convert_binary(self, payload):
-        pass
+        return 1
 
-    def payload_size(self, payload):
-        pass
+    def size(self, payload):
+        return 1
