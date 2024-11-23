@@ -4,7 +4,7 @@ import threading
 from src.message import Header
 from src.codes import Operation
 from src.client import Client
-import time
+from src.functions import *
 
 class Server:
 
@@ -37,7 +37,7 @@ class Server:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.bind((self.host, self.port))
         self.server.listen(self.queue_size)  # enables the server to accept {queue_size}  number of connections
-        self.server.settimeout(120.0)  # Timeout for accepting new connections; will throw exception: socket.timeout
+        self.server.settimeout(1.0)  # Timeout for accepting new connections; will throw exception: socket.timeout
 
         #NOTE: I DONT KNOW HOW TIMEOUT WORKS VERY WELL YET
         print(f"Server started on {self.host}:{self.port}") # ?DEBUG?
@@ -95,7 +95,7 @@ class Server:
             header_object = pickle.loads(header_bytes_object)
 
             #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
-            if not isinstance(Header):
+            if not isinstance(header_object,Header):
                 print(f"Bad handshake object from {client_address}") # ? DEBUG ?
                 return None
 
@@ -142,16 +142,58 @@ class Server:
         try:
             while self.running:
                 try:
+
+
                     buffer_size = None
-                    #read in next header of header_size
+                    buffer = None
 
-                        #verify its a good opcode
-                        #figure out our buffer
-                        #ensure its not None or 0
 
+                    # ************************************* #
+                    # |  read in next header of header_size |
+                    # ************************************* #
+
+                    # receive the handshake header of header_size
+                    header_bytes_object = client_socket.recv(self.header_size)
+
+                    #load object back through pickle conversion from byte re-assembly
+                    header_object = pickle.loads(header_bytes_object)
+
+                    #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
+                    if not isinstance(header_object,Header):
+                        print(f"Bad handshake object from {client_address}") # ? DEBUG ?
+                        return None
+
+                    #Ensure we receive the handshake message
+                    if header_object.opcode not in Operation:
+                        #send a message to the cleint indicating bad handshake
+                        print(f"Bad handshake OPCODE from {client_address}") # ? DEBUG ?
+                        return None
+
+                    #TODO: Ensure payload size is not 0 or None
+
+                    #get payload size
+                    buffer_size = header_object.payload_size
+
+                    # ************************************* #
+                    # |  read in payload of buffer_size |
+                    # ************************************* #
+
+                    # receive the handshake header of header_size
+                    message_bytes_object = client_socket.recv(self.header_size)
+
+                    #load object back through pickle conversion from byte re-assembly
+                    message_object = pickle.loads(message_bytes_object)
+
+                    #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
+
+                    #TODO: check if instance in second element of one of action map assosciated opcode operation
+                    if not isinstance(message_object,Message):
+                        print(f"Bad message object from {client_address}") # ? DEBUG ?
+                        return None
 
                     #read in  the message buffer size
                         #load message body if exists
+
 
 
                     #process into action mapped function
