@@ -1,20 +1,15 @@
 import socket
 import threading
-import pickle
-from message import Message
-from message import Header
 from functions import *
 from codes import Operation
-import sys
 
-MAX_HEADER_SIZE = 112
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
 
 class Client():
 
     def __init__(self):
-        self.header_size = MAX_HEADER_SIZE
+        self.header_size = MAX_PICKLED_HEADER_SIZE
 
         self.server_rooms = []
         self.server_host = 'localhost'
@@ -86,5 +81,5 @@ if __name__ == "__main__":
     ph = pickle.dumps(h)
     print(f"Pickled Header: {ph}")
     print(f"MAX (?) Pickled Header Length: {len(ph)}")
-    
+
     Client().start()

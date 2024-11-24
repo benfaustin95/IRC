@@ -1,4 +1,9 @@
+import pickle
+from message import Header
 from message import Message
+
+MAX_PICKLED_HEADER_SIZE = 98
+MAX_INT = 2 ** 31 - 1
 
 """
 # Action_map is a dictionary that maps the number of arguments (arg_len) to specific functions.
@@ -18,6 +23,41 @@ else:
     raise ValueError("Invalid argument length when initializing SFTP build")
 """
 
+def create_packages(user_input, opcode, message_type):
+
+    user_input = user_input.lower()  # Convert to lowercase
+    msg = None
+
+    # Create a Message object based on the message type
+    #TODO: will get more complex if we do private mssage child classes
+    if message_type == "Message":
+        msg = Message(opcode, user_input)
+
+    # Serialize the message into a pickled object
+    pickled_msg = pickle.dumps(msg)
+
+    # Generate the header package
+    header_package = create_header_package(pickled_msg, opcode)
+
+    return header_package, pickled_msg
+
+
+#Creates a serialized header with padding to match the required size.
+def create_header_package(pickled_msg, opcode):
+
+    handshake_header = Header(opcode, len(pickled_msg))
+
+    # Serialize the header
+    header_pickle = pickle.dumps(handshake_header)
+    header_size = len(header_pickle)
+
+    # Add padding to ensure the header size matches MAX_PICKLED_HEADER_SIZE
+    diff = max(0, MAX_PICKLED_HEADER_SIZE - header_size)
+    padding = diff * b'\x00'
+
+    header_package = header_pickle + padding
+
+    return header_package
 
 def hello():
     print("Hello function called")  # Implement the actual logic
