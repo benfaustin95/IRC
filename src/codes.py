@@ -30,3 +30,28 @@ class Error(Enum):
     MAX_REQUESTS = 5  # Sent by the server when a client has exceeded their rate limit.
     MSG_FAILED = 6  # Sent by the server when a valid message has failed to be fulfilled.
     MSG_REJECTED = 7  # Sent by the server when an invalid message has been identified.
+
+class Command(Enum):
+    BAD_FILE_PATH = -5
+    INVALID_ARGS = -2
+    NOT_COMMAND = -1
+    NO_EXTRA_ARGS = 0
+
+
+
+commands = {
+        "/create_room": int,
+        "/list_rooms": None,  # Can have anything
+        "/join_room": int,
+        "/leave_room": int,
+        "/list_members": None,  # Can have anything
+        "/send_msg": str,
+        "/broadcast_msg": str,
+        "/terminate": None,  # Can have anything
+        "/private_msg": str,
+        "/send_file": "file_path",  # Custom check for file path
+        "/ping": None  # Can have anything
+}
+
+
+

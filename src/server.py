@@ -5,9 +5,10 @@ from message import Header
 from message import Message
 from codes import Operation
 from client import Client
-from functions import *
+from functions import action_map
 
 MAX_PICKLED_HEADER_SIZE = 98
+MAX_INT = 2 ** 31 - 1
 LOCAL_HOST = "127.0.0.1"
 PORT = 49152
 QUEUE_SIZE = 5
@@ -143,7 +144,7 @@ class Server:
 
         except socket.timeout:
             #No data received within the timeout, return None
-            print(f"Handshake Timeout {client_address}: {e}")
+            print(f"Handshake Timeout {client_address}: socket.timeout")
             return None
 
         except Exception as e:
