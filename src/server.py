@@ -258,6 +258,7 @@ class Server:
         if self.server:
             self.server.close()
 
+        #TODO: this isnt gonna work
         for nickname, client in self.clients.items():
             client.socket.close()
 

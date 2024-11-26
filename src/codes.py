@@ -50,8 +50,8 @@ commands = {
         "/terminate": None,  # Can have anything
         "/private_msg": str,
         "/send_file": "file_path",  # Custom check for file path
-        "/ping": None  # Can have anything
+        "/ping": None,  # Can have anything
+        "/logout": None  # Can have anything
 }
-
 
 
