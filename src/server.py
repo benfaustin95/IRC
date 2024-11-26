@@ -7,6 +7,8 @@ from codes import Operation
 from client import Client
 from functions import action_map
 
+import os
+
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
 LOCAL_HOST = "127.0.0.1"
@@ -123,23 +125,39 @@ class Server:
 
             print("DEBUG: waiting to recieve message")
             # Receive the payload (nickname)
-            message_bytes_object = client_socket.recv(payload_buffer)
+
+            message_bytes_object = b""
+            num_chunks = payload_buffer/4096
+            remainder = int((num_chunks - int(num_chunks)) * 4096)
+            num_chunks = int(num_chunks)
+            for i in range(num_chunks):
+                message_bytes_object += client_socket.recv(4096)
+
+            message_bytes_object += client_socket.recv(remainder)
             message_object = pickle.loads(message_bytes_object)
-            print(f"DEBUG: Message object {message_object}") 
-            nickname = message_object.payload
-            print(f"DEBUG: Nickname {nickname}") 
+            try:
+                with open(os.path.abspath("../data/notes"), "wb") as file:
+                    file.write(message_object.payload)
+            except Exception as e:
+                print(f"NOPE: {e}")
+
+
+            return None
+
+            # nickname = message_object.payload
+            # print(f"DEBUG: Nickname {nickname}") 
 
 
 
-            # Ensure the nickname doesn't already exist
-            if nickname in self.clients:
-                print(f"Nickname '{nickname}' already taken from {client_address}") # ? DEBUG ?
-                return None
+            # # Ensure the nickname doesn't already exist
+            # if nickname in self.clients:
+            #     print(f"Nickname '{nickname}' already taken from {client_address}") # ? DEBUG ?
+            #     return None
 
-            #store client in existing clients list
-            self.clients[nickname] = Client(client_socket, client_address, nickname)
-            print(f"Handshake successful: {nickname} at {client_address}") # ? DEBUG ?
-            return nickname
+            # #store client in existing clients list
+            # self.clients[nickname] = Client(client_socket, client_address, nickname)
+            # print(f"Handshake successful: {nickname} at {client_address}") # ? DEBUG ?
+            # return nickname
 
 
         except socket.timeout:

@@ -4,6 +4,8 @@ from functions import *
 from codes import Operation
 from codes import *
 
+import os
+
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
 
@@ -38,7 +40,7 @@ class Client():
                 return None
 
             message_bytes_object = server_socket.recv(header_object.payload_size)
-            message_object= pickle.loads(message_bytes_object)
+            message_object = pickle.loads(message_bytes_object)
 
             # Do something with the message depending on the opcode
 
@@ -51,29 +53,66 @@ class Client():
 
         user_input = ""
         while(user_input.lower() != "logout"):
-            user_input = input("Enter something: ")
-            msg = Message(Operation.SEND_MSG, user_input) 
-            pickled_input = pickle.dumps(user_input) 
-            pickled_msg = pickle.dumps(msg)
-            handshake_header = Header(Operation.HELLO, len(pickled_msg))
+            try:
+                filepath = input("Enter a file: ")
+                file_data = self.read_file(filepath) 
+                msg = Message(Operation.SEND_FILE, file_data) 
+                pickled_msg = pickle.dumps(msg)
 
+                handshake_header = Header(Operation.HELLO, len(pickled_msg))
 
+                header_pickle = pickle.dumps(handshake_header)
+                header_size = len(header_pickle)
+                diff = MAX_PICKLED_HEADER_SIZE - header_size
 
-            header_pickle = pickle.dumps(handshake_header)
-            header_size = len(header_pickle)
-            diff = MAX_PICKLED_HEADER_SIZE - header_size
+                
+                padding = diff * (b'\x00')
+                package = header_pickle + padding 
+                
+                server_socket.sendall(package)
 
-            print(f"Pickled Header Len (Should be < MAX): {len(header_pickle)}")
-            
-            padding = diff * (b'\x00')
-            package = header_pickle + padding 
-            print(f"Package Size: {len(package)}   <--- Should be MAX_PICKLED_HEADER_SIZE == 98")
-            server_socket.sendall(package)
-
-            server_socket.send(pickled_msg)
+                server_socket.send(pickled_msg)
+            except Exception as e:
+                print(f"{e}")
 
         print("Logging out")
         server_socket.close()
+
+
+    def read_file(self, filepath):
+
+        try:
+            with open(filepath, "rb") as file:
+                file_data = file.read() 
+        except FileNotFoundError as e:
+            print(f"{e} : {filepath}")
+
+        return file_data
+        
+
+        # write_loc = os.path.abspath("../data/")
+
+        # filename = os.path.basename(filepath)
+        # write_loc = os.path.join(write_loc, filename)
+        # print(write_loc)
+
+        # try:
+        #     with open(write_loc, "wb") as b_file:
+        #         b_file.write(file_data)
+        # except Exception as e:
+        #     print(f"{e} : {write_loc}")
+    
+
+    def test_send_file(self):
+        notes_path = os.path.abspath("notes")
+        codes_path = os.path.abspath("codes.py")
+        rar_path = os.path.abspath("../test_archive.zip")
+        self.send_file(notes_path)
+        self.send_file(codes_path)
+        self.send_file(rar_path)
+
+
+
 
     def verify_command(self,input_string):
 
@@ -91,7 +130,7 @@ class Client():
             return (True, command, argument)
 
         elif expected_type == "file_path":
-            #TODO: CUSTOME LOGIC HERE FOR VERIFICATION + FINDING PATH & UPLOAD
+            #TODO: CUSTOM LOGIC HERE FOR VERIFICATION + FINDING PATH & UPLOAD
             if isinstance(argument, str) and len(argument) > 0:
                 return (True, command, argument)
             else:
@@ -122,11 +161,11 @@ class Client():
                 return (False, None, None)
 
 if __name__ == "__main__":
-    h = Header(Operation.TERMINATE, MAX_INT)
-    print(f"Header: {h}")
+    # h = Header(Operation.TERMINATE, MAX_INT)
+    # print(f"Header: {h}")
 
-    ph = pickle.dumps(h)
-    print(f"Pickled Header: {ph}")
-    print(f"MAX (?) Pickled Header Length: {len(ph)}")
+    # ph = pickle.dumps(h)
+    # print(f"Pickled Header: {ph}")
+    # print(f"MAX (?) Pickled Header Length: {len(ph)}")
 
-    Client().start()
+    Client(0).start()
