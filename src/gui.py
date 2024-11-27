@@ -19,7 +19,7 @@ class Gui:
         self.input_height = 3
         self.output_height = self.height - self.input_height
         self.output_window = curses.newwin(self.output_height, self.width, 0, 0)
-        #self.output_window.scrollok(True)
+        self.output_window.scrollok(True)
 
         self.input_window = curses.newwin(self.input_height, self.width, self.output_height, 0)
         self.input_window.nodelay(True)
@@ -28,24 +28,6 @@ class Gui:
 #        curses.cbreak()
 #        self.stdscr.keypad(True)
 #        self.input_window.keypad(True)
-    def handle_input(self, input):
-        ch = self.stdscr.getch()
-        if ch != -1:
-            if ch in (curses.KEY_BACKSPACE, 127):
-                input = input[:-1]
-            elif ch in (curses.KEY_ENTER, 10, 13):
-                # if starts with slash --> run command
-                if (input):
-                    if input[0] == "/":
-                        return "command"
-                    # or send message
-                    else:
-                        return "message"
-            elif 0 <= ch <= 255:
-                try:
-                    input += chr(ch)
-                except Exception as e:
-                    pass
 
     def update_input_window(self, msg):
         self.input_window.clear()

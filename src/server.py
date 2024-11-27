@@ -17,12 +17,16 @@ class Server:
 
     def __init__(self, max_rooms):
 
-        self.clients = {}
-
+#        self.clients = {}
+        self.clients = []
         self.max_rooms = max_rooms
         self.rooms = [[]]
 
+        #! Placeholder for testing broadcast
+        self.broadcast_msg_queue = []
+        self.broadcast_lock = threading.Lock()
         ####### Server Stuff ###
+
 
         self.running = True  # Flag to control server loop
 
@@ -44,7 +48,7 @@ class Server:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.bind((self.host, self.port))
         self.server.listen(self.queue_size)  # enables the server to accept {queue_size}  number of connections
-        self.server.settimeout(1.0)  # Timeout for accepting new connections; will throw exception: socket.timeout
+        self.server.settimeout(100.0)  # Timeout for accepting new connections; will throw exception: socket.timeout
 
         #NOTE: I DONT KNOW HOW TIMEOUT WORKS VERY WELL YET
         print(f"Server started on {self.host}:{self.port}") # ?DEBUG?
@@ -60,11 +64,30 @@ class Server:
                     # Spin off a thread to handle the client. Make it a daemon( Daemon threads are abruptly stopped at shutdown) should't be a problem as no persisitng data????
                     threading.Thread(target=self.spin_off_thread, args=(client_socket, client_address), daemon=True).start()
 
+                    threading.Thread(target=self.broadcast_thread, args=(), daemon=True).start()
+
+
+                except Exception as e:
+                    print(f"{e}")
                 # No connection was ready within the timeout, continue the loop
                 except socket.timeout:
                     continue
         finally:
             self.shutdown()
+
+    def broadcast_thread(self):
+        try:
+            while (self.running):
+                if (self.broadcast_msg_queue):
+                    with self.broadcast_lock:
+                        msg = self.broadcast_msg_queue.pop(0)
+                        for c in self.clients:
+                            ph = msg[0]
+                            pmsg = msg[1]
+                            c.sendall(ph)
+                            c.sendall(pmsg)
+        except Exception as e:
+            print(f"Exception in broadcast thread: {e}")
 
 
     def spin_off_thread(self, client_socket, client_address):
@@ -146,14 +169,12 @@ class Server:
 
             # Ensure the nickname doesn't already exist
             if nickname in self.clients:
-                print("NICK TAKEN - SEND ERROR")
                 print(f"Nickname '{nickname}' already taken from {client_address}") # ? DEBUG ?
                 pickled_msg = pickle.dumps("HELLO")
                 error_header_package = create_header_package(pickled_msg, Error.TAKEN_NAME)
                 client_socket.sendall(error_header_package)
                 return False
             else:
-                print("NICK GOOD --- SEND OK")
                 packaged_header, pickled_msg = create_packages("OK", Operation.OK, message_type="Message")
                 client_socket.sendall(packaged_header)
                 client_socket.sendall(pickled_msg)
@@ -161,6 +182,7 @@ class Server:
 
             #store client in existing clients list
            #! self.clients[nickname] = Client(client_socket, client_address, nickname)
+            self.clients.append(client_socket) 
             print(f"Handshake successful: {nickname} at {client_address}") # ? DEBUG ?
             return nickname
 
@@ -182,7 +204,6 @@ class Server:
         client_socket.sendall(pmsg)
 
     def business(self, client_socket, client_address, nickname):
-        print("In businsess")
         try:
             while self.running:
                 try:
@@ -240,10 +261,13 @@ class Server:
 
                     print(f"OPCODE: {header_object.opcode}")
                     print(f"MESSAGE: {message_object.payload}")
-                    if (header_object.opcode == Operation.SEND_MSG):
-                        ph, pmsg = create_packages(message_object.payload, Operation.BROADCAST_MSG, "Message")
-                        client_socket.sendall(ph)
-                        client_socket.sendall(pmsg)
+                    if (header_object.opcode == Operation.BROADCAST_MSG):
+                        msg = nickname + ":" + str(message_object.payload)
+                        ph, pmsg = create_packages(msg, Operation.SEND_MSG, "Message")
+                        item = (ph, pmsg)
+                        self.broadcast_msg_queue.append(item)
+                        # client_socket.sendall(ph)
+                        # client_socket.sendall(pmsg)
 
                     #process into action mapped function
                         #process r_value of aciton map
@@ -263,23 +287,23 @@ class Server:
             print(f"Communication error with {nickname} at {client_address}: {e}")
 
 
-    # Clean up the client from the list
-    def remove_client_connected_socket(self,client_socket):
+#     # Clean up the client from the list
+#     def remove_client_connected_socket(self,client_socket):
+# #! TODO: Bring back dictionary 
+#         # remove_nickname = None
+#         # #find the key based on the client_socket
+#         # for nickname, client in self.clients.items():
+#         #     if client.socket == client_socket:
+#         #         remove_nickname = nickname
+#         #         break
 
-        remove_nickname = None
-        #find the key based on the client_socket
-        for nickname, client in self.clients.items():
-            if client.socket == client_socket:
-                remove_nickname = nickname
-                break
-
-        # If a key was found, remove the key-value pair from the dictionary
-        if remove_nickname is not None:
-            del self.clients[remove_nickname]
-            print(f"Removed client with socket: {client_socket}") # ? DEBUG ?
-        else:
-            #TODO: Raise custom exception...something is really wrong
-            print(f"No client found with socket: {client_socket}") # ? DEBUG ?
+#         # If a key was found, remove the key-value pair from the dictionary
+#         if remove_nickname is not None:
+#             del self.clients[remove_nickname]
+#             print(f"Removed client with socket: {client_socket}") # ? DEBUG ?
+#         else:
+#             #TODO: Raise custom exception...something is really wrong
+#             print(f"No client found with socket: {client_socket}") # ? DEBUG ?
 
 
 
@@ -296,9 +320,9 @@ class Server:
         if self.server:
             self.server.close()
 
-        #TODO: this isnt gonna work
-        for nickname, client in self.clients.items():
-            client.socket.close()
+        # #TODO: this isnt gonna work
+        # for nickname, client in self.clients.items():
+        #     client.socket.close()
 
         print("Server shut down.") # ? DEBUG ?
 
