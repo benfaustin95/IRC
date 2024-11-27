@@ -5,6 +5,10 @@ from codes import Operation
 from codes import *
 
 import os
+import curses
+import queue
+from gui import Gui
+import time
 
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
@@ -19,63 +23,141 @@ class Client():
         self.server_host = 'localhost'
         self.server_port = 49152 #ephemeral port range - dynamic,temp connections used for client application, safe w/o conflicting service on system
 
+        self.msg_queue = []
+        self.to_send = []
+        self.running = False
+
+        self.gui = None
+        self.output_lock = threading.Lock()
+        #curses.wrapper(self.run_gui)
 
     def __del__(self):
         pass
 
 
     def listen(self, server_socket):
+        # try:
+        #    # self.output_lock.acquire()
+        #    # self.gui.output_window.addstr("Listening Thread Started\n")
+        #    # self.output_lock.release()
+        # except Exception as e:
+        #     print(f"Exception in listen: {e}")
         while True:
-            # receive the handshake header of header_size
-            header_bytes_object = server_socket.recv(self.header_size)
-            if not header_bytes_object:
+            try:
+                # receive the handshake header of header_size
+                header_bytes_object = server_socket.recv(self.header_size)
+                if not header_bytes_object:
+                    self.running = False
+                    break
+
+                #load object back through pickle conversion from byte re-assembly
+                header_object = pickle.loads(header_bytes_object)
+
+                #print(f"Client Receieved {header_object.opcode}")
+                with self.output_lock:
+                    self.msg_queue.append(str(header_object.opcode))
+                #print(f"MESSAGE QUEUE: {self.msg_queue}")
+
+                #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
+                if not isinstance(header_object,Header):
+                    print(f"Bad header from Server") # ? DEBUG ?
+                    return None
+            except Exception as e:
+                time.sleep(5)
+                self.running = False
                 break
+            # message_bytes_object = server_socket.recv(header_object.payload_size)
+            # message_object = pickle.loads(message_bytes_object)
 
-            #load object back through pickle conversion from byte re-assembly
-            header_object = pickle.loads(header_bytes_object)
 
-            #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
-            if not isinstance(header_object,Header):
-                print(f"Bad header from Server") # ? DEBUG ?
-                return None
+    def run_gui(self, stdscr):
+        self.gui = Gui(stdscr)
+        self.gui.input_window.nodelay(True)
+        user_input = "" 
+        while self.running:
+            with self.output_lock:
+                while self.msg_queue:
+                    msg = self.msg_queue.pop(0)
+                    self.gui.output_window.addstr(msg + "\n")
+                    self.gui.output_window.refresh()
+        
+            self.gui.input_window.clear()
+            self.gui.input_window.addstr("> " + user_input)
+            self.gui.input_window.refresh()
 
-            message_bytes_object = server_socket.recv(header_object.payload_size)
-            message_object = pickle.loads(message_bytes_object)
+            try:
+                ch = stdscr.getch()
+                if ch != -1:
+                    if ch in (curses.KEY_BACKSPACE, 127):
+                        user_input = user_input[:-1]
+                    elif ch in (curses.KEY_ENTER, 10, 13):
+                        self.to_send.append(user_input)
+                        user_input = ""
+                    else:
+                        user_input += chr(ch)
+            except curses.error:
+                pass
 
-            # Do something with the message depending on the opcode
+            time.sleep(0.05)
+        
 
+        
+        
+        self.gui.exit()
+        self.running = False
+    
+    
     def start(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.connect((self.server_host, self.server_port))
+        self.running = True
+
+        gui_thread = threading.Thread(target=curses.wrapper, args=(self.run_gui,), daemon=True)
+        gui_thread.start()
         
-        listening_thread = threading.Thread(target=self.listen, args=(server_socket,))
+        listening_thread = threading.Thread(target=self.listen, args=(server_socket,), daemon=True)
         listening_thread.start()
 
         user_input = ""
-        while(user_input.lower() != "logout"):
+        i = 0
+        while self.running:
             try:
-                filepath = input("Enter a file: ")
-                file_data = self.read_file(filepath) 
-                msg = Message(Operation.SEND_FILE, file_data) 
-                pickled_msg = pickle.dumps(msg)
+                # filepath = input("Enter a file: ")
+                # file_data = self.read_file(filepath) 
+                # msg = Message(Operation.SEND_FILE, file_data) 
 
-                handshake_header = Header(Operation.HELLO, len(pickled_msg))
+                if (i == 0):
+                    msg = Message(Operation.SEND_MSG, "test payload")
+                    pickled_msg = pickle.dumps(msg)
 
-                header_pickle = pickle.dumps(handshake_header)
-                header_size = len(header_pickle)
-                diff = MAX_PICKLED_HEADER_SIZE - header_size
+                    handshake_header = Header(Operation.HELLO, len(pickled_msg))
 
-                
-                padding = diff * (b'\x00')
-                package = header_pickle + padding 
-                
-                server_socket.sendall(package)
+                    header_pickle = pickle.dumps(handshake_header)
+                    header_size = len(header_pickle)
+                    diff = MAX_PICKLED_HEADER_SIZE - header_size
 
-                server_socket.send(pickled_msg)
+                    
+                    padding = diff * (b'\x00')
+                    package = header_pickle + padding 
+
+                    server_socket.sendall(package)
+                    i += 1
+                    #server_socket.send(pickled_msg)
+                else:
+                    if (self.to_send):
+                        with self.output_lock:
+                            self.msg_queue.append(self.to_send.pop(0))
             except Exception as e:
+                self.running = False
                 print(f"{e}")
 
+        while(self.running):
+            time.sleep(1)
+        for msg in self.to_send:
+            print(msg)
         print("Logging out")
+        self.gui.exit()
+        self.running = False
         server_socket.close()
 
 
@@ -159,6 +241,8 @@ class Client():
             except (ValueError, TypeError):
                 print(f"!ERROR: The command '{command}' expects a number.")
                 return (False, None, None)
+
+
 
 if __name__ == "__main__":
     # h = Header(Operation.TERMINATE, MAX_INT)

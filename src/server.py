@@ -8,6 +8,7 @@ from client import Client
 from functions import action_map
 
 import os
+import time
 
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
@@ -99,14 +100,45 @@ class Server:
             # receive the handshake header of header_size
             header_bytes_object = client_socket.recv(self.header_size)
 
-            print(f"HEADER BYTES OBJ: {header_bytes_object}")
-
             #load object back through pickle conversion from byte re-assembly
             header_object = pickle.loads(header_bytes_object)
 
-            print(f"Header object: {header_object}")
-            print(f"Header object->opcode: {header_object.opcode}")
+            print(f"Server recieved {header_object.opcode}")
 
+            file_data = "test payload"
+            msg = Message(Operation.SEND_FILE, file_data) 
+            pickled_msg = pickle.dumps(msg)
+            handshake_header = Header(Operation.HELLO, len(pickled_msg))
+            header_pickle = pickle.dumps(handshake_header)
+            header_size = len(header_pickle)
+            diff = MAX_PICKLED_HEADER_SIZE - header_size
+            padding = diff * (b'\x00')
+            package = header_pickle + padding 
+            client_socket.sendall(package)
+
+            print("Sent First Message")
+
+            time.sleep(2)
+
+            file_data = "test payload"
+            msg = Message(Operation.SEND_FILE, file_data) 
+            pickled_msg = pickle.dumps(msg)
+            handshake_header = Header(Operation.SEND_FILE, len(pickled_msg))
+            header_pickle = pickle.dumps(handshake_header)
+            header_size = len(header_pickle)
+            diff = MAX_PICKLED_HEADER_SIZE - header_size
+            padding = diff * (b'\x00')
+            package = header_pickle + padding 
+            client_socket.sendall(package)
+            
+            print("Sent Second Message")
+
+            client_socket.sendall(b'\x01')
+
+            while True:
+                pass 
+            return None 
+            
             #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
             if not isinstance(header_object,Header):
                 print(f"Bad handshake object from {client_address}") # ? DEBUG ?
@@ -135,13 +167,15 @@ class Server:
 
             message_bytes_object += client_socket.recv(remainder)
             message_object = pickle.loads(message_bytes_object)
-            try:
-                with open(os.path.abspath("../data/notes"), "wb") as file:
-                    file.write(message_object.payload)
-            except Exception as e:
-                print(f"NOPE: {e}")
 
+    
+            # try:
+            #     with open(os.path.abspath("../data/notes"), "wb") as file:
+            #         file.write(message_object.payload)
+            # except Exception as e:
+            #     print(f"NOPE: {e}")
 
+            
             return None
 
             # nickname = message_object.payload
