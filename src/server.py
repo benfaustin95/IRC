@@ -48,7 +48,7 @@ class Server:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.bind((self.host, self.port))
         self.server.listen(self.queue_size)  # enables the server to accept {queue_size}  number of connections
-        self.server.settimeout(100.0)  # Timeout for accepting new connections; will throw exception: socket.timeout
+        self.server.settimeout(1.0)  # Timeout for accepting new connections; will throw exception: socket.timeout
 
         #NOTE: I DONT KNOW HOW TIMEOUT WORKS VERY WELL YET
         print(f"Server started on {self.host}:{self.port}") # ?DEBUG?
@@ -67,8 +67,6 @@ class Server:
                     threading.Thread(target=self.broadcast_thread, args=(), daemon=True).start()
 
 
-                except Exception as e:
-                    print(f"{e}")
                 # No connection was ready within the timeout, continue the loop
                 except socket.timeout:
                     continue
