@@ -1,6 +1,7 @@
 import socket
 import threading
 from codes import Operation
+from codes import Error
 from client import Client
 from functions import *
 
@@ -126,6 +127,8 @@ class Server:
                 print(f"Bad handshake OPCODE from {client_address}") # ? DEBUG ?
                 return None
 
+
+
             #TODO: Ensure payload size is not 0 or None
 
             #get payload size
@@ -142,11 +145,18 @@ class Server:
 
             # Ensure the nickname doesn't already exist
             if nickname in self.clients:
+                print("NICK TAKEN - SEND ERROR")
                 print(f"Nickname '{nickname}' already taken from {client_address}") # ? DEBUG ?
                 pickled_msg = pickle.dumps("HELLO")
-                error_header_packag = create_header_package(pickled_msg, Operation.HELLO.value)
-                client_socket.send(error_header_packag)
+                error_header_package = create_header_package(pickled_msg, Error.TAKEN_NAME.value)
+                client_socket.sendall(error_header_package)
                 return False
+            else:
+                print("NICK GOOD --- SEND OK")
+                pickled_msg = pickle.dumps("OK")
+                error_header_package = create_header_package(pickled_msg, Operation.OK.value)
+                client_socket.sendall(error_header_package)
+
 
             #store client in existing clients list
             self.clients[nickname] = Client(client_socket, client_address, nickname)

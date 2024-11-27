@@ -21,6 +21,7 @@ class Client():
 
     def listen(self):
         while self.running:
+            continue
             try:
 
                 # receive the handshake header of header_size
@@ -71,6 +72,7 @@ class Client():
 
     def handshake(self):
 
+        print("\n\n\ ---in handshake --\n\n ")
         attemped_usernames = []
 
         while True:
@@ -79,18 +81,19 @@ class Client():
                 # Generate the header package
                 header_package, pickled_msg = create_packages(username, Operation.HELLO.value, message_type="Message")
                 # Send the header
+                print(f"DEBUG: HEADER BYTES OBJ HANDSHAKE: {header_package}\n       MESSAGE BYTES OBJ: {pickled_msg}")
                 self.socket_instance.sendall(header_package)
                 self.socket_instance.sendall(pickled_msg)
-                print(f"DEBUG: HEADER BYTES OBJ HANDSHAKE: {header_package}\n       MESSAGE BYTES OBJ: {pickled_msg}")
                 #recive if we ont get a message back that is also hello
                 #if its error
                 # receive the handshake header of header_size
 
 
+                print(f"ABOUT TO RECEIVDE")
                 header_bytes_object = self.socket_instance.recv(self.header_size)
 
                 #NOTE: recv() returns an empty byte string when the socket is closed or there is no data left to read.
-                print(f"HEADER BYTES OBJ: {header_bytes_object}")
+                print(f"RECV HEADER BYTES OBJ: {header_bytes_object}")
 
                 #load object back through pickle conversion from byte re-assembly
                 header_object = pickle.loads(header_bytes_object)
@@ -100,16 +103,19 @@ class Client():
 
                 #Ensure we receive the handshake message
                 if header_object.opcode is  Operation.OK.value:
-                    break
+                    print("*Leaving Handshake processs")
+                    return True
                 else:
                     attemped_usernames.append(username)
+                    print("*Restarting Handshake proccess")
+                    continue
 
             except Exception as e:
                 print(f"Handshake process to server failed: {e}")
                 self.running = False
                 return None
 
-            return True
+
 
     def get_username(self,attempted_usernames=None):
         while True:
@@ -121,6 +127,8 @@ class Client():
                 print("Invalid username. Please enter an alphanumeric username.")
 
     def busines(self):
+
+        print("\n\n\ ---in buinesss--\n\n ")
 
         input_loop = True
 
@@ -190,16 +198,16 @@ class Client():
         if self.connect_to_server(self.server_host, self.server_port) is False:
             return False
 
-        print("\nFor a list of commands, type /help and press Enter")
 
         # Start the listening thread for incoming server data
-        listening_thread = threading.Thread(target=self.listen)
-        listening_thread.start()
+        #listening_thread = threading.Thread(target=self.listen)
+        #listening_thread.start()
 
-        #handsake
-        handshake =  self.handshake()
+        hand = self.handshake()
+        print(hand)
 
-        if handshake is True:
+        if hand:
+            print("\nFor a list of commands, type /help and press Enter")
             self.busines()
 
         self.stop()
