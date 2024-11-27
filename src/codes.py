@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class Operation(Enum):
+    OK = 0
     HELLO = 1  # Initial request sent by client to join server.
     CREATE_ROOM = 2  # The client requests to join a room on the server.
     LIST_ROOMS = 3  # The client requests to list rooms on the server.
@@ -66,16 +67,21 @@ class Command(Enum):
     NO_EXTRA_ARGS = 0
 
 
+
 commands = {
-    "/create_room": int,
-    "/list_rooms": None,  # Can have anything
-    "/join_room": int,
-    "/leave_room": int,
-    "/list_members": None,  # Can have anything
-    "/send_msg": str,
-    "/broadcast_msg": str,
-    "/terminate": None,  # Can have anything
-    "/private_msg": str,
-    "/send_file": "file_path",  # Custom check for file path
-    "/ping": None  # Can have anything
+        "/create_room": int,
+        "/list_rooms": None,  # Can have anything
+        "/join_room": int,
+        "/leave_room": int,
+        "/list_members": None,  # Can have anything
+        "/send_msg": str,
+        "/broadcast_msg": str,
+        "/terminate": None,  # Can have anything
+        "/private_msg": str,
+        "/send_file": "file_path",  # Custom check for file path
+        "/ping": None,  # Can have anything
+        "/help": None
 }
+
+
+

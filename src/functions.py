@@ -22,8 +22,29 @@ else:
     raise ValueError("Invalid argument length when initializing SFTP build")
 """
 
-# Creates a serialized header with padding to match the required size.
+def create_packages(user_input, opcode, message_type):
 
+    user_input = user_input.lower()  # Convert to lowercase
+    msg = None
+
+    # Create a Message object based on the message type
+    #TODO: will get more complex if we do private mssage child classes
+    if message_type == "Message":
+        msg = Message(opcode, user_input)
+
+    # Serialize the message into a pickled object
+    pickled_msg = pickle.dumps(msg)
+
+    # Generate the header package
+    header_package = create_header_package(pickled_msg, opcode)
+
+    return header_package, pickled_msg
+
+
+#Creates a serialized header with padding to match the required size.
+def create_header_package(pickled_msg, opcode):
+
+    handshake_header = Header(opcode, len(pickled_msg))
 
 server_action_map = {
     Operation.HELLO: 'hello',
