@@ -10,10 +10,8 @@ import queue
 from gui import Gui
 import time
 
-MAX_PICKLED_HEADER_SIZE = 98
-MAX_INT = 2 ** 31 - 1
 SCREEN_REFRESH_RATE = 0.01
-MAX_MSG_SIZE = 200
+MAX_MSG_BYTES = 4
 
 help_msg = '''    
 /create_room        integer      This command requires an integer argument between 1 and {self.max_rooms} to request the server to create a room.
@@ -37,20 +35,18 @@ help_msg = '''
 class Client():
 
     def __init__(self,max_rooms):
-        self.header_size = MAX_PICKLED_HEADER_SIZE
-
         self.max_rooms = max_rooms
         self.server_rooms = []
         self.server_host = 'localhost'
         self.server_port = 49152 #ephemeral port range - dynamic,temp connections used for client application, safe w/o conflicting service on system
 
-        self.msg_queue = []
-        self.to_send = []
+        self.incoming_msg_queue = []
+        self.outgoing_msg_queue = []
         self.running = False
 
         self.gui = None
-        self.output_lock = threading.Lock()
-        self.input_lock = threading.Lock()
+        self.incoming_lock = threading.Lock()
+        self.outgoing_lock = threading.Lock()
 
         self.server_socket = None
 
@@ -71,6 +67,7 @@ class Client():
             "/list_rooms": self.list_rooms
         }
 
+    #? Do we need this?
     def __del__(self):
         pass
 
@@ -78,29 +75,22 @@ class Client():
     def listen(self, server_socket):
         while self.running:
             try:
-                # receive the handshake header of header_size
-                header_bytes_object = server_socket.recv(self.header_size)
+                msg_obj = self.recv_msg()
 
-                #load object back through pickle conversion from byte re-assembly
-                header_object = pickle.loads(header_bytes_object)
+                # if not isinstance(header_object, Header):
+                #     self.print_client(f"Bad Handshake object from {self.server_host}")
+                #     return None
 
-                if not isinstance(header_object, Header):
-                    self.print_client(f"Bad Handshake object from {self.server_host}")
-                    return None
-
-                if header_object.opcode not in Operation:
-                    self.print_client(f"Bad handshake OPCODE from {self.server_host}")
-                    return None
+                # if header_object.opcode not in Operation:
+                #     self.print_client(f"Bad handshake OPCODE from {self.server_host}")
+                #     return None
                 
-                message_bytes_object = server_socket.recv(header_object.payload_size)
-                message_object = pickle.loads(message_bytes_object)
-                msg = str(message_object.payload) 
+                msg = str(msg_obj.payload) 
                 self.print_client(msg)
-                #print(msg)
             
             except Exception as e:
                 self.print_client(f"Exception in Client().listen(): {e}")
-                time.sleep(10)
+                time.sleep(10) #! Sleeps are just to give enough time for the gui to print an error before exiting and setting self.running
                 self.running = False
                 break
     
@@ -121,18 +111,16 @@ class Client():
         while True:
             try:
                 user_name = self.get_username(attempted_usernames)
-                print("crash")
                 msg = Message(Operation.HELLO, user_name) 
-                print("here")
                 self.send_msg(msg)
                 msg_obj = self.recv_msg()
                 print(f"Received: {msg_obj.payload}")
 
                 #? Worth using a map here for only a few options?
-                if (msg_obj.header.opcode == Operation.OK):
-                    print(f"{msg_obj.header.opcode}")
+                if (msg_obj.opcode == Operation.OK):
+                    print(f"{msg_obj.opcode}")
                     return True
-                elif(msg_obj.header.opcode == Error.TAKEN_NAME):
+                elif(msg_obj.opcode == Error.TAKEN_NAME):
                     attempted_usernames.append(user_name)
                 else:
                     raise Exception("Invalid handshake opcode from Server")
@@ -152,13 +140,13 @@ class Client():
 
     def send_msg(self, msg):
         p_msg = pickle.dumps(msg)
-        msg_len = len(p_msg).to_bytes(4, byteorder='big')
+        msg_len = len(p_msg).to_bytes(MAX_MSG_BYTES, byteorder='big')
         
         self.server_socket.sendall(msg_len)
         self.server_socket.sendall(p_msg)
 
     def get_username(self, attempted_usernames):
-        while True:
+        while self.running:
             user_name = input("Enter an alphanumeric username: ").strip()
             if (user_name.isalnum() and user_name not in attempted_usernames):
                 return user_name
@@ -170,11 +158,10 @@ class Client():
         self.print_client("~~ Welcome to the Server ~~")
         while(self.running):
             try:
-                if (self.to_send):
-                    with self.output_lock:
-                        ph, pmsg = self.to_send.pop(0)
-                        self.server_socket.sendall(ph)
-                        self.server_socket.sendall(pmsg)
+                if (self.outgoing_msg_queue):
+                    with self.outgoing_lock:
+                        msg = self.outgoing_msg_queue.pop(0)
+                        self.send_msg(msg)
             except Exception as e:
                 self.print_client(f"Error: {e}")
                 time.sleep(10)
@@ -214,9 +201,9 @@ class Client():
 
     def load_messages(self):
         try:
-            with self.output_lock:
-                while self.msg_queue:
-                    msg = self.msg_queue.pop(0)
+            with self.incoming_lock:
+                while self.incoming_msg_queue:
+                    msg = self.incoming_msg_queue.pop(0)
                     self.gui.output_window.addstr(msg + "\n")
             self.gui.output_window.refresh()
         except curses.error as e:
@@ -242,9 +229,9 @@ class Client():
                 elif ch in (curses.KEY_ENTER, 10, 13):
                     if user_input[0] == "/":
                         if (user_input.strip().lower() == "/logout"):
-                            ph, pmsg = create_packages(user_input, Operation.TERMINATE, "Message")
-                            msg = (ph, pmsg)
-                            self.to_send.insert(0, msg)
+                            msg = Message(Operation.TERMINATE, "TERMINATE")
+                            with self.outgoing_lock:
+                                self.outgoing_msg_queue.insert(0, msg)
                             break
                         #! The verify command function scares me
                         result, command, argument = self.verify_command(user_input)
@@ -253,10 +240,9 @@ class Client():
 
                     # or send message   #? What seems better, storing payloads in the outgoing queue, or full Messages objects?
                     else:
-                        ph, pmsg = create_packages(user_input, Operation.BROADCAST_MSG, "Message")
-                        msg = (ph, pmsg)
-                        self.to_send.append(msg)
-                        # self.to_send.append(user_input)
+                        msg = Message(Operation.BROADCAST_MSG, user_input)
+                        self.outgoing_msg_queue.append(msg)
+                    
                     user_input = ""
                 elif 0 <= ch <= 255:
                     try:
@@ -271,31 +257,8 @@ class Client():
     
     
     def print_client(self, msg):
-        with self.output_lock:
-            self.msg_queue.insert(0, str(msg))
-
-    def read_file(self, filepath):
-
-        try:
-            with open(filepath, "rb") as file:
-                file_data = file.read() 
-        except FileNotFoundError as e:
-            print(f"{e} : {filepath}")
-
-        return file_data
-        
-
-        # write_loc = os.path.abspath("../data/")
-
-        # filename = os.path.basename(filepath)
-        # write_loc = os.path.join(write_loc, filename)
-        # print(write_loc)
-
-        # try:
-        #     with open(write_loc, "wb") as b_file:
-        #         b_file.write(file_data)
-        # except Exception as e:
-        #     print(f"{e} : {write_loc}")
+        with self.incoming_lock:   
+            self.incoming_msg_queue.insert(0, str(msg)) # Insert at the front since client-side messages should take priority
     
 
     def test_send_file(self):
@@ -371,6 +334,30 @@ class Client():
         ph, pmsg = create_packages("idk what to put here", Operation.LIST_ROOMS, "Message")
         msg = (ph, pmsg)
         self.to_send.append(msg)
+
+
+    def read_file(self, filepath):
+        try:
+            with open(filepath, "rb") as file:
+                file_data = file.read() 
+        except FileNotFoundError as e:
+            print(f"{e} : {filepath}")
+
+        return file_data
+        
+
+        # write_loc = os.path.abspath("../data/")
+
+        # filename = os.path.basename(filepath)
+        # write_loc = os.path.join(write_loc, filename)
+        # print(write_loc)
+
+        # try:
+        #     with open(write_loc, "wb") as b_file:
+        #         b_file.write(file_data)
+        # except Exception as e:
+        #     print(f"{e} : {write_loc}")
+
 
 if __name__ == "__main__":
     # h = Header(Operation.TERMINATE, MAX_INT)
