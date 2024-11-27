@@ -53,10 +53,13 @@ class Client():
                 #load object back through pickle conversion from byte re-assembly
                 header_object = pickle.loads(header_bytes_object)
 
-                #print(f"Client Receieved {header_object.opcode}")
-                with self.output_lock:
-                    self.msg_queue.append(str(header_object.opcode))
-                #print(f"MESSAGE QUEUE: {self.msg_queue}")
+                message_bytes_object = server_socket.recv(header_object.payload_size)
+                message_object = pickle.loads(message_bytes_object)
+                msg = "SERVER: " + str(message_object.payload) 
+                self.print_client(msg)
+                # with self.output_lock:
+                #     self.msg_queue.append("SERVER: " + str(header_object.opcode) + "\n" + str(message_object.payload) + "\n")
+
 
                 #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
                 if not isinstance(header_object,Header):
@@ -64,44 +67,48 @@ class Client():
                     return None
             except Exception as e:
                 time.sleep(5)
-                self.running = False
                 break
-            # message_bytes_object = server_socket.recv(header_object.payload_size)
-            # message_object = pickle.loads(message_bytes_object)
 
 
     def run_gui(self, stdscr):
         self.gui = Gui(stdscr)
         self.gui.input_window.nodelay(True)
+        stdscr.nodelay(True)
         user_input = "" 
         while self.running:
+
             with self.output_lock:
                 while self.msg_queue:
                     msg = self.msg_queue.pop(0)
                     self.gui.output_window.addstr(msg + "\n")
-                    self.gui.output_window.refresh()
-        
+            self.gui.output_window.refresh()
+
             self.gui.input_window.clear()
             self.gui.input_window.addstr("> " + user_input)
             self.gui.input_window.refresh()
-
-            try:
-                ch = stdscr.getch()
-                if ch != -1:
-                    if ch in (curses.KEY_BACKSPACE, 127):
-                        user_input = user_input[:-1]
-                    elif ch in (curses.KEY_ENTER, 10, 13):
-                        self.to_send.append(user_input)
-                        user_input = ""
+            
+            ch = stdscr.getch()
+            if ch != -1:
+                if ch in (curses.KEY_BACKSPACE, 127):
+                    user_input = user_input[:-1]
+                elif ch in (curses.KEY_ENTER, 10, 13):
+                    # if starts with slash --> run command
+                    if user_input[0] == "/":
+                        self.print_client("What the fuck")
+                    # or send message
                     else:
+                        self.to_send.append(user_input)
+                    if (user_input.strip().lower() == "exit"):
+                        break
+                    user_input = ""
+                elif 0 <= ch <= 255:
+                    try:
                         user_input += chr(ch)
-            except curses.error:
-                pass
-
-            time.sleep(0.05)
+                    except Exception as e:
+                        self.to_send.append(str(e)) 
+                        pass
         
-
-        
+            time.sleep(0.01)
         
         self.gui.exit()
         self.running = False
@@ -118,35 +125,19 @@ class Client():
         listening_thread = threading.Thread(target=self.listen, args=(server_socket,), daemon=True)
         listening_thread.start()
 
-        user_input = ""
-        i = 0
         while self.running:
             try:
                 # filepath = input("Enter a file: ")
                 # file_data = self.read_file(filepath) 
                 # msg = Message(Operation.SEND_FILE, file_data) 
 
-                if (i == 0):
-                    msg = Message(Operation.SEND_MSG, "test payload")
-                    pickled_msg = pickle.dumps(msg)
-
-                    handshake_header = Header(Operation.HELLO, len(pickled_msg))
-
-                    header_pickle = pickle.dumps(handshake_header)
-                    header_size = len(header_pickle)
-                    diff = MAX_PICKLED_HEADER_SIZE - header_size
-
-                    
-                    padding = diff * (b'\x00')
-                    package = header_pickle + padding 
-
-                    server_socket.sendall(package)
-                    i += 1
                     #server_socket.send(pickled_msg)
-                else:
-                    if (self.to_send):
-                        with self.output_lock:
-                            self.msg_queue.append(self.to_send.pop(0))
+                if (self.to_send):
+                    with self.output_lock:
+                        packaged_header, pickled_msg = create_packages(self.to_send.pop(0), Operation.HELLO, "Message")
+                        # self.msg_queue.append(self.to_send.pop(0))
+                        server_socket.sendall(packaged_header)
+                        server_socket.send(pickled_msg)
             except Exception as e:
                 self.running = False
                 print(f"{e}")
@@ -160,6 +151,9 @@ class Client():
         self.running = False
         server_socket.close()
 
+    def print_client(self, msg):
+        with self.output_lock:
+            self.msg_queue.insert(0, str(msg))
 
     def read_file(self, filepath):
 

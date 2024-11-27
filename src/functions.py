@@ -25,7 +25,6 @@ else:
 
 def create_packages(user_input, opcode, message_type):
 
-    user_input = user_input.lower()  # Convert to lowercase
     msg = None
 
     # Create a Message object based on the message type

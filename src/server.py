@@ -6,6 +6,7 @@ from message import Message
 from codes import Operation
 from client import Client
 from functions import action_map
+from functions import *
 
 import os
 import time
@@ -97,46 +98,31 @@ class Server:
 
         try:
 
-            # receive the handshake header of header_size
-            header_bytes_object = client_socket.recv(self.header_size)
-
-            #load object back through pickle conversion from byte re-assembly
-            header_object = pickle.loads(header_bytes_object)
-
-            print(f"Server recieved {header_object.opcode}")
-
-            file_data = "test payload"
-            msg = Message(Operation.SEND_FILE, file_data) 
-            pickled_msg = pickle.dumps(msg)
-            handshake_header = Header(Operation.HELLO, len(pickled_msg))
-            header_pickle = pickle.dumps(handshake_header)
-            header_size = len(header_pickle)
-            diff = MAX_PICKLED_HEADER_SIZE - header_size
-            padding = diff * (b'\x00')
-            package = header_pickle + padding 
-            client_socket.sendall(package)
-
-            print("Sent First Message")
-
-            time.sleep(2)
-
-            file_data = "test payload"
-            msg = Message(Operation.SEND_FILE, file_data) 
-            pickled_msg = pickle.dumps(msg)
-            handshake_header = Header(Operation.SEND_FILE, len(pickled_msg))
-            header_pickle = pickle.dumps(handshake_header)
-            header_size = len(header_pickle)
-            diff = MAX_PICKLED_HEADER_SIZE - header_size
-            padding = diff * (b'\x00')
-            package = header_pickle + padding 
-            client_socket.sendall(package)
-            
-            print("Sent Second Message")
-
-            client_socket.sendall(b'\x01')
-
             while True:
-                pass 
+                # receive the handshake header of header_size
+                header_bytes_object = client_socket.recv(self.header_size)
+                if (not header_bytes_object):
+                    break
+
+                #load object back through pickle conversion from byte re-assembly
+                header_object = pickle.loads(header_bytes_object)
+
+                print(f"Server recieved {header_object.opcode}")
+
+                payload_buffer = header_object.payload_size
+
+                message_bytes = client_socket.recv(payload_buffer)
+                if (not message_bytes):
+                    break
+                message_object = pickle.loads(message_bytes)
+
+                response_msg =  f"Welcome to the server, {message_object.payload}"
+                print(response_msg)
+
+                ph, pmsg = create_packages(response_msg, Operation.HELLO, "Message")
+                client_socket.sendall(ph)
+                client_socket.send(pmsg)
+
             return None 
             
             #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
