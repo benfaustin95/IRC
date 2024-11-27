@@ -7,6 +7,7 @@ from functions import *
 
 import time
 
+MAX_MSG_SIZE = 200
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
 LOCAL_HOST = "127.0.0.1"
@@ -121,68 +122,35 @@ class Server:
 
 
     def handshake(self, client_socket, client_address):
+    # def send_msg(self, msg):
+    #     p_msg = pickle.dumps(msg)
+    #     msg_len = len(p_msg)
+    #     self.server_socket.sendall(msg_len)
+    #     self.server_socket.sendall(p_msg)
 
         try:
+            msg_obj = self.recv_msg(client_socket)
+            print(msg_obj.payload)
 
-            # receive the handshake header of header_size
-            header_bytes_object = client_socket.recv(self.header_size)
+            msg_response = Message(Operation.OK, "OK")
+            self.send_msg(msg_response, client_socket)
 
-            #NOTE: recv() returns an empty byte string when the socket is closed or there is no data left to read.
-
-            #load object back through pickle conversion from byte re-assembly
-            header_object = pickle.loads(header_bytes_object)
-
-            print(f"HEADER: {header_object.opcode}")
-
-            ###### Emegency Checks. Ideally client should filter all this bad data out #############
-
-
-            #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
-            if not isinstance(header_object,Header):
-                print(f"Bad handshake object from {client_address}") # ? DEBUG ?
-                return None
-
-            #Ensure we receive the handshake message
-            if header_object.opcode is not Operation.HELLO:
-                #send a message to the cleint indicating bad handshake
-                print(f"Bad handshake OPCODE from {client_address}") # ? DEBUG ?
-                return None
+        #     # Ensure the nickname doesn't already exist
+        #     if nickname in self.clients:
+        #         print(f"Nickname '{nickname}' already taken from {client_address}") # ? DEBUG ?
+        #         pickled_msg = pickle.dumps("HELLO")
+        #         error_header_package = create_header_package(pickled_msg, Error.TAKEN_NAME)
+        #         client_socket.sendall(error_header_package)
+        #         return False
+        #   else:
 
 
 
-            #TODO: Ensure payload size is not 0 or None
-
-            #get payload size
-            payload_buffer = header_object.payload_size
-
-            print("DEBUG: waiting to nickname message")
-            # Receive the payload (nickname)
-            message_bytes_object = client_socket.recv(payload_buffer)
-            message_object = pickle.loads(message_bytes_object)
-            print(f"MESSAGE: {message_object.payload}")
-            
-            nickname = message_object.payload
-            print(f"NICKNAME: {nickname}")
-
-
-            # Ensure the nickname doesn't already exist
-            if nickname in self.clients:
-                print(f"Nickname '{nickname}' already taken from {client_address}") # ? DEBUG ?
-                pickled_msg = pickle.dumps("HELLO")
-                error_header_package = create_header_package(pickled_msg, Error.TAKEN_NAME)
-                client_socket.sendall(error_header_package)
-                return False
-            else:
-                packaged_header, pickled_msg = create_packages("OK", Operation.OK, message_type="Message")
-                client_socket.sendall(packaged_header)
-                client_socket.sendall(pickled_msg)
-           
-
-            #store client in existing clients list
-           #! self.clients[nickname] = Client(client_socket, client_address, nickname)
-            self.clients.append(client_socket) 
-            print(f"Handshake successful: {nickname} at {client_address}") # ? DEBUG ?
-            return nickname
+        #     #store client in existing clients list
+        #    #! self.clients[nickname] = Client(client_socket, client_address, nickname)
+        #     self.clients.append(client_socket) 
+        #     print(f"Handshake successful: {nickname} at {client_address}") # ? DEBUG ?
+        #     return nickname
 
 
         except socket.timeout:
@@ -194,13 +162,22 @@ class Server:
             print(f"Handshake error with {client_address}: {e}")
             return None
 
+    def recv_msg(self, client_socket):
+        msg_len = client_socket.recv(4)
+        msg_len = int.from_bytes(msg_len, byteorder='big')
+        print(f"MSG LEN: {msg_len}")
 
-    def test_send(self, client_socket):
-        print("SENDING TEST")
-        ph, pmsg = create_packages("TEST_SEND", Operation.HELLO, "Message")
-        client_socket.sendall(ph)
-        client_socket.sendall(pmsg)
+        msg_obj = pickle.loads(client_socket.recv(msg_len)) 
+        return msg_obj
 
+    def send_msg(self, msg, client_socket):
+        p_msg = pickle.dumps(msg)
+        msg_len = len(p_msg).to_bytes(4, byteorder='big')
+        
+        client_socket.sendall(msg_len)
+        client_socket.sendall(p_msg)
+
+    
     def business(self, client_socket, client_address, nickname):
         try:
             while self.running:

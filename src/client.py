@@ -13,7 +13,7 @@ import time
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
 SCREEN_REFRESH_RATE = 0.01
-
+MAX_MSG_SIZE = 200
 
 help_msg = '''    
 /create_room        integer      This command requires an integer argument between 1 and {self.max_rooms} to request the server to create a room.
@@ -121,27 +121,42 @@ class Client():
         while True:
             try:
                 user_name = self.get_username(attempted_usernames)
-                packaged_header, pickled_msg = create_packages(user_name, Operation.HELLO, message_type="Message")
-                self.server_socket.sendall(packaged_header)
-                self.server_socket.sendall(pickled_msg)
+                print("crash")
+                msg = Message(Operation.HELLO, user_name) 
+                print("here")
+                self.send_msg(msg)
+                msg_obj = self.recv_msg()
+                print(f"Received: {msg_obj.payload}")
 
-                header_bytes = self.server_socket.recv(self.header_size)
-                header_obj = pickle.loads(header_bytes)
-
-
-                msg_bytes = self.server_socket.recv(header_obj.payload_size)
-                msg_obj = pickle.loads(msg_bytes)
-
-                if (header_obj.opcode is Operation.OK):
-                    return True 
-                else:
+                #? Worth using a map here for only a few options?
+                if (msg_obj.header.opcode == Operation.OK):
+                    print(f"{msg_obj.header.opcode}")
+                    return True
+                elif(msg_obj.header.opcode == Error.TAKEN_NAME):
                     attempted_usernames.append(user_name)
+                else:
+                    raise Exception("Invalid handshake opcode from Server")
 
             except Exception as e:
                 self.print_client(f"Handshake failed: {e}")
                 self.running = False
                 return False
-    
+
+    def recv_msg(self):
+        msg_len = self.server_socket.recv(4)
+        msg_len = int.from_bytes(msg_len, byteorder='big')
+        print(f"MSG LEN: {msg_len}")
+
+        msg_obj = pickle.loads(self.server_socket.recv(msg_len)) 
+        return msg_obj
+
+    def send_msg(self, msg):
+        p_msg = pickle.dumps(msg)
+        msg_len = len(p_msg).to_bytes(4, byteorder='big')
+        
+        self.server_socket.sendall(msg_len)
+        self.server_socket.sendall(p_msg)
+
     def get_username(self, attempted_usernames):
         while True:
             user_name = input("Enter an alphanumeric username: ").strip()
