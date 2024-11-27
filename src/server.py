@@ -1,11 +1,8 @@
-import pickle
 import socket
 import threading
-from message import Header
-from message import Message
 from codes import Operation
 from client import Client
-from functions import action_map
+from functions import *
 
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
@@ -70,10 +67,12 @@ class Server:
     def spin_off_thread(self, client_socket, client_address):
 
         client_socket.settimeout(600.0)  # Timeout for receiving data: 10 min
+        success = False
 
         try:
             # process handshake
-            success = self.handshake(client_socket, client_address)
+            while success is False:
+                success = self.handshake(client_socket, client_address)
 
 
             # handshake was good, business logic time;passed socket,adress, nick
@@ -83,11 +82,18 @@ class Server:
         except Exception as e:
             print(f"Error with client {client_address}: {e}")
         finally:
-            client_socket.close()
-            print(f"Client {client_address} disconnected")
-
-            # Clean up the client from the list and remove
-            self.remove_client_connected_socket(client_socket)
+            # Safe closing of the socket
+            try:
+                # Check if the socket is open before closing
+                if client_socket.fileno() != -1:
+                    client_socket.close()
+                    print(f"Client {client_address} socket closed.")
+            except socket.error as e:
+                # Handle the case where the socket is already closed or in a bad state
+                print(f"Socket error when closing client {client_address}: {e}")
+            except Exception as e:
+                # Catch any other unexpected exceptions
+                print(f"Unexpected error while closing socket for {client_address}: {e}")
 
 
     def handshake(self, client_socket, client_address):
@@ -97,6 +103,7 @@ class Server:
             # receive the handshake header of header_size
             header_bytes_object = client_socket.recv(self.header_size)
 
+            #NOTE: recv() returns an empty byte string when the socket is closed or there is no data left to read.
             print(f"HEADER BYTES OBJ: {header_bytes_object}")
 
             #load object back through pickle conversion from byte re-assembly
@@ -105,13 +112,16 @@ class Server:
             print(f"Header object: {header_object}")
             print(f"Header object->opcode: {header_object.opcode}")
 
+            ###### Emegency Checks. Ideally client should filter all this bad data out #############
+
+
             #return none if it's not a header object, handshake cannot proceed. !!! If u dont do this ur gonna love Executable malware !!!!!
             if not isinstance(header_object,Header):
                 print(f"Bad handshake object from {client_address}") # ? DEBUG ?
                 return None
 
             #Ensure we receive the handshake message
-            if header_object.opcode is not Operation.HELLO:
+            if header_object.opcode is not Operation.HELLO.value:
                 #send a message to the cleint indicating bad handshake
                 print(f"Bad handshake OPCODE from {client_address}") # ? DEBUG ?
                 return None
@@ -121,7 +131,7 @@ class Server:
             #get payload size
             payload_buffer = header_object.payload_size
 
-            print("DEBUG: waiting to recieve message")
+            print("DEBUG: waiting to nickname message")
             # Receive the payload (nickname)
             message_bytes_object = client_socket.recv(payload_buffer)
             message_object = pickle.loads(message_bytes_object)
@@ -130,11 +140,13 @@ class Server:
             print(f"DEBUG: Nickname {nickname}") 
 
 
-
             # Ensure the nickname doesn't already exist
             if nickname in self.clients:
                 print(f"Nickname '{nickname}' already taken from {client_address}") # ? DEBUG ?
-                return None
+                pickled_msg = pickle.dumps("HELLO")
+                error_header_packag = create_header_package(pickled_msg, Operation.HELLO.value)
+                client_socket.send(error_header_packag)
+                return False
 
             #store client in existing clients list
             self.clients[nickname] = Client(client_socket, client_address, nickname)
@@ -178,9 +190,13 @@ class Server:
                         return None
 
                     #Ensure we receive the handshake message
-                    if header_object.opcode not in Operation:
+                    if header_object.opcode not in Operation.value:
                         #send a message to the cleint indicating bad handshake
                         print(f"Bad handshake OPCODE from {client_address}") # ? DEBUG ?
+                        return None
+
+                    if header_object.opcode == Operation.TERMINATE.value:
+                        print(f"Client {client_address} requested termination.")
                         return None
 
                     #TODO: Ensure payload size is not 0 or None
@@ -209,7 +225,6 @@ class Server:
                     #process into action mapped function
                         #process r_value of aciton map
                         #SPECIAL: check if its disconnect is call
-                    func_to_run = action_map[header_object.opcode][0] 
                     result = func_to_run(message_object)
 
                     if (result is Operation.TERMINATE):

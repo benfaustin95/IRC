@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class Operation(Enum):
+    OK = 0  # Initial request sent by client to join server.
     HELLO = 1  # Initial request sent by client to join server.
     CREATE_ROOM = 2  # The client requests to join a room on the server.
     LIST_ROOMS = 3  # The client requests to list rooms on the server.
@@ -47,11 +48,11 @@ commands = {
         "/list_members": None,  # Can have anything
         "/send_msg": str,
         "/broadcast_msg": str,
-        "/terminate": None,  # Can have anything
         "/private_msg": str,
         "/send_file": "file_path",  # Custom check for file path
         "/ping": None,  # Can have anything
-        "/logout": None  # Can have anything
+        "/logout": None,  # Can have anything
+        "/help": None  # Can have anything
 }
 
 

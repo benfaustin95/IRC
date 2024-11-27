@@ -1,3 +1,10 @@
+Client design
+
+While the cleint is running we are listening, if the server ever cant be reached we stop out input loop
+
+
+
+
 
 #tasks for today in order, tested one after the other
 
