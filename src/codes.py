@@ -28,8 +28,36 @@ class Error(Enum):
     TAKEN_NAME = 3  # Sent by the server when a username has already been claimed.
     CHECKSUM_FAIL = 4  # Sent by client and/or server when a message payload has been corrupted in transit.
     MAX_REQUESTS = 5  # Sent by the server when a client has exceeded their rate limit.
+    INVALID_HELLO = 10
+    INVALID_OPCODE = 12
+
+
+class ErrorException(Exception):
+    def __init__(self, error: Error):
+        self.error = error
+
+
+class NonFatalErrors(Enum):
     MSG_FAILED = 6  # Sent by the server when a valid message has failed to be fulfilled.
     MSG_REJECTED = 7  # Sent by the server when an invalid message has been identified.
+    INVALID_MSG_FMT = 11
+    INVALID_CREATE_ROOM = 12
+    INVALID_JOIN_ROOM = 13
+    INVALID_LEAVE_ROOM = 14
+    MAX_ROOMS = 15
+    ROOM_CLOSED = 16
+
+
+class NonFatalErrorException(Exception):
+    def __init__(self, error: NonFatalErrors):
+        self.error = error
+
+
+class RoomCode(Enum):
+    REMOVE_CLIENT = 1
+    ADD_CLIENT = 2
+    BROADCAST_MESSAGE = 3
+
 
 class Command(Enum):
     BAD_FILE_PATH = -5
@@ -38,20 +66,16 @@ class Command(Enum):
     NO_EXTRA_ARGS = 0
 
 
-
 commands = {
-        "/create_room": int,
-        "/list_rooms": None,  # Can have anything
-        "/join_room": int,
-        "/leave_room": int,
-        "/list_members": None,  # Can have anything
-        "/send_msg": str,
-        "/broadcast_msg": str,
-        "/terminate": None,  # Can have anything
-        "/private_msg": str,
-        "/send_file": "file_path",  # Custom check for file path
-        "/ping": None  # Can have anything
+    "/create_room": int,
+    "/list_rooms": None,  # Can have anything
+    "/join_room": int,
+    "/leave_room": int,
+    "/list_members": None,  # Can have anything
+    "/send_msg": str,
+    "/broadcast_msg": str,
+    "/terminate": None,  # Can have anything
+    "/private_msg": str,
+    "/send_file": "file_path",  # Custom check for file path
+    "/ping": None  # Can have anything
 }
-
-
-
