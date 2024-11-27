@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class Operation(Enum):
+    OK = 0
     HELLO = 1  # Initial request sent by client to join server.
     CREATE_ROOM = 2  # The client requests to join a room on the server.
     LIST_ROOMS = 3  # The client requests to list rooms on the server.
