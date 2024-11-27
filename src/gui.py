@@ -22,12 +22,35 @@ class Gui:
         #self.output_window.scrollok(True)
 
         self.input_window = curses.newwin(self.input_height, self.width, self.output_height, 0)
+        self.input_window.nodelay(True)
+        self.stdscr.nodelay(True)
 #        curses.noecho()
 #        curses.cbreak()
 #        self.stdscr.keypad(True)
 #        self.input_window.keypad(True)
+    def handle_input(self, input):
+        ch = self.stdscr.getch()
+        if ch != -1:
+            if ch in (curses.KEY_BACKSPACE, 127):
+                input = input[:-1]
+            elif ch in (curses.KEY_ENTER, 10, 13):
+                # if starts with slash --> run command
+                if (input):
+                    if input[0] == "/":
+                        return "command"
+                    # or send message
+                    else:
+                        return "message"
+            elif 0 <= ch <= 255:
+                try:
+                    input += chr(ch)
+                except Exception as e:
+                    pass
 
-
+    def update_input_window(self, msg):
+        self.input_window.clear()
+        self.input_window.addstr("> " + msg)
+        self.input_window.refresh()
 
     def exit(self):
         print("Exiting Gui...")

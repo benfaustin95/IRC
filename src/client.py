@@ -12,6 +12,7 @@ import time
 
 MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
+SCREEN_REFRESH_RATE = 0.01
 
 class Client():
 
@@ -70,60 +71,68 @@ class Client():
                 break
 
 
+    def load_messages(self):
+        with self.output_lock:
+            while self.msg_queue:
+                msg = self.msg_queue.pop(0)
+                self.gui.output_window.addstr(msg + "\n")
+        self.gui.output_window.refresh()
+
+
     def run_gui(self, stdscr):
         self.gui = Gui(stdscr)
-        self.gui.input_window.nodelay(True)
-        stdscr.nodelay(True)
         user_input = "" 
         while self.running:
 
-            with self.output_lock:
-                while self.msg_queue:
-                    msg = self.msg_queue.pop(0)
-                    self.gui.output_window.addstr(msg + "\n")
-            self.gui.output_window.refresh()
+            self.load_messages()    
+            self.gui.update_input_window(user_input) 
 
-            self.gui.input_window.clear()
-            self.gui.input_window.addstr("> " + user_input)
-            self.gui.input_window.refresh()
-            
+            # Core input loop
             ch = stdscr.getch()
             if ch != -1:
+                # Delete Logic
                 if ch in (curses.KEY_BACKSPACE, 127):
                     user_input = user_input[:-1]
+
+                # Input has been sent by user
                 elif ch in (curses.KEY_ENTER, 10, 13):
                     # if starts with slash --> run command
                     if user_input[0] == "/":
-                        self.print_client("What the fuck")
+                        command = user_input[1:]
+                        self.print_client(f"Command Entered: {command}")
+                        if (command.strip().lower() == "logout"):
+                            break
                     # or send message
                     else:
                         self.to_send.append(user_input)
-                    if (user_input.strip().lower() == "exit"):
-                        break
                     user_input = ""
                 elif 0 <= ch <= 255:
                     try:
                         user_input += chr(ch)
                     except Exception as e:
-                        self.to_send.append(str(e)) 
-                        pass
-        
-            time.sleep(0.01)
+                        self.print_client(f"Exception : {e}")
+
+            time.sleep(SCREEN_REFRESH_RATE)
         
         self.gui.exit()
         self.running = False
     
     
     def start(self):
+
+
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.connect((self.server_host, self.server_port))
         self.running = True
-
-        gui_thread = threading.Thread(target=curses.wrapper, args=(self.run_gui,), daemon=True)
-        gui_thread.start()
         
         listening_thread = threading.Thread(target=self.listen, args=(server_socket,), daemon=True)
         listening_thread.start()
+
+        gui_thread = threading.Thread(target=curses.wrapper, args=(self.run_gui,), daemon=True)
+        gui_thread.start()
+
+        self.print_client("Succesfully Connected")
+
 
         while self.running:
             try:
