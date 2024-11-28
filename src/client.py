@@ -16,10 +16,10 @@ MAX_MSG_BYTES = 4
 help_msg = '''    
 /create_room        integer      This command requires an integer argument between 1 and {self.max_rooms} to request the server to create a room.
 /join_room          integer      This command requires an integer argument between 1 and {self.max_rooms} to join an existing room on the server.
-/leave_room         integer      This command requires an integer argument between 1 and {self.max_rooms} to leave a specified room.
-/send_msg           string       This command requires an alphanumeric string argument to send a message to the current room.
-/broadcast_msg      string       This command requires an alphanumeric string argument to broadcast a message to all connected users.
-/private_msg        string       This command requires an alphanumeric string argument to send a private message to another user.
+/leave_room         integer      This command requires an integer argument between 1 and {self.max_rooms} to leave a specified room on the server.
+/send_msg           string       This command requires an alphanumeric string argument to send a message to the current room on the server.
+/broadcast_msg      string       This command requires an alphanumeric string argument to broadcast a message to all connected users in specified rooms on the server.
+/private_msg        string       This command requires an alphanumeric string argument to send a secure private message to another user on the server.
 /send_file          file path    This command requires a file path as an argument to send a file to the server or other users.
 /list_rooms         None         This command does not require any argument and lists all available rooms on the server.
 /list_members       None         This command does not require any argument and lists all members in the current room.
@@ -335,6 +335,10 @@ class Client():
         msg = (ph, pmsg)
         self.to_send.append(msg)
 
+    def private_message(self,message):
+        ph, pmsg = create_packages("message", Operation.LIST_ROOMS, "Message")
+        msg = (ph, pmsg)
+        self.to_send.append(msg)
 
     def read_file(self, filepath):
         try:
