@@ -1,6 +1,7 @@
+import pickle
 import threading
 import queue
-from message import Message, create_packages
+from message import Message, create_packages, get_message
 from ServerClient import ServerClient, RoomMessage
 from codes import Error, NonFatalErrors, Operation, ErrorException, NonFatalErrorException, RoomCode
 
@@ -21,30 +22,6 @@ if opcodde in action_map:
 else:
     raise ValueError("Invalid argument length when initializing SFTP build")
 """
-
-def create_packages(user_input, opcode, message_type):
-
-    user_input = user_input.lower()  # Convert to lowercase
-    msg = None
-
-    # Create a Message object based on the message type
-    #TODO: will get more complex if we do private mssage child classes
-    if message_type == "Message":
-        msg = Message(opcode, user_input)
-
-    # Serialize the message into a pickled object
-    pickled_msg = pickle.dumps(msg)
-
-    # Generate the header package
-    header_package = create_header_package(pickled_msg, opcode)
-
-    return header_package, pickled_msg
-
-
-#Creates a serialized header with padding to match the required size.
-def create_header_package(pickled_msg, opcode):
-
-    handshake_header = Header(opcode, len(pickled_msg))
 
 server_action_map = {
     Operation.HELLO: 'hello',
@@ -79,23 +56,21 @@ class ServerActions:
         try:
             message, client_socket, client_address = kwargs['message'], kwargs['client_socket'], kwargs[
                 'client_address']
-            payload = message.payload
 
-            print(payload)
-            if 'nickname' not in payload:
-                raise ErrorException(Error.INVALID_HELLO)
-
-            nickname = payload['nickname']
+            nickname = message.payload
             print(f"DEBUG: Nickname {nickname}")
 
             # Ensure the nickname doesn't already exist
-            if nickname in self.clients:
-                print(f"Nickname '{payload['nickname']}' already taken from {client_address}")  # ? DEBUG ?
-                raise ErrorException(Error.TAKEN_NAME)
+            if not nickname or not isinstance(nickname, str):
+                raise ErrorException(Error.INVALID_HELLO)
 
+            if nickname in self.clients:
+                print(f"Nickname '{nickname}' already taken from {client_address}")  # ? DEBUG ?
+                raise ErrorException(Error.TAKEN_NAME)
             # store client in existing clients list
-            self.clients[nickname] = ServerClient(client_socket, client_address, nickname)
+            client = self.clients[nickname] = ServerClient(client_socket, client_address, nickname)
             print(f"Handshake successful: {nickname} at {client_address}")  # ? DEBUG ?
+            client.send_ok()
             return self.clients[nickname]
         finally:
             self.client_lock.release()
@@ -109,107 +84,142 @@ class ServerActions:
             if len(self.rooms) == self.max_rooms:
                 raise NonFatalErrorException(NonFatalErrors.MAX_ROOMS)
 
-            if 'room_name' not in message.payload or message.payload['room_name'] in self.rooms:
+            room_number = message.payload
+
+            if room_number in self.rooms:
                 raise NonFatalErrorException(NonFatalErrors.INVALID_CREATE_ROOM)
 
-            room_name = message.payload['room_name']
-
-            self.rooms[room_name] = (room_name, queue.Queue(), {client.nickname: client})
-
+            room = {
+                'room_number': room_number,
+                'room_queue': queue.Queue(),
+                'room_clients': {client.nickname},
+                'active': True,
+            }
             threading.Thread(
                 target=self.run_room,
-                args=self.rooms[room_name],
+                args=(room,),
                 daemon=True,
             ).start()
 
-            client.add_room_to_client(room_name, self.rooms[room_name][1])
+            self.rooms[room['room_number']] = room
+            client.add_room_to_client(room_number, room['room_queue'])
+            client.send_ok()
         finally:
             self.room_lock.release()
 
-    def run_room(self, room_name: str, message_queue: queue.Queue[RoomMessage], clients: dict[str, ServerClient]):
-        while True:
-            message_type, payload = message_queue.get()
-
-            if message_type is RoomCode.REMOVE_CLIENT and payload in clients:
-                del clients[payload]
-                payload = create_packages(
-                    {'room_name': room_name, 'text': f'{payload} has left the room'},
-                    Operation.BROADCAST_MSG,
-                    'Message',
-                )
-            elif message_type is RoomCode.ADD_CLIENT and payload.nickname not in clients:
-                clients[payload.nickname] = payload
-                payload = create_packages(
-                    {'room_name': room_name, 'text': f'{payload} has joined the room'},
-                    Operation.BROADCAST_MSG,
-                    'Message',
-                )
-            elif message_type is RoomCode.ADD_CLIENT:
-                continue
-            else:
-                payload = create_packages(payload.payload, Operation.BROADCAST_MSG, 'Message')
-
-            if len(clients) == 0 and message_queue.empty():
-                break
-
-            for client in self.clients.values():
+    def run_room(self, room):
+        message_queue, clients = room['room_queue'], room['room_clients']
+        while room['active']:
+            try:
+                message = message_queue.get(timeout=60)
                 try:
-                    if not client.socket_open:
-                        del clients[client.nickname]
-                    else:
-                        client.send_to_client(*payload)
-                except Error:
-                    del self.clients[client.nickname]
+                    self.client_lock.acquire()
+                    for client in set(clients):
+                        try:
+                            if client in self.clients:
+                                self.clients[client].send_to_client(*message)
+                            else:
+                                clients.remove(client)
+                        except:
+                            # what exceptions need to be handled
+                            clients.remove(client)
+                finally:
+                    self.client_lock.release()
+            except queue.Empty:
+                print('no message to broadcast room:', room['room_number'])
 
-        self.room_lock.acquire()
-        message_queue.shutdowm()
-        del self.rooms[room_name]
-        self.room_lock.release()
+            if len(clients) > 0:
+                continue
+
+            # If empty begin process of ending room by acquiring lock
+            self.room_lock.acquire()
+            # After acquiring lock if a client was added during that waiting period then do not end room
+            if len(clients) == 0:
+                message_queue.shutdown()
+                del self.rooms[room['room_number']]
+                room['active'] = False
+            self.room_lock.release()
 
     def list_rooms(self, **kwargs):
         print("List Rooms function called")  # Implement the actual logic
         client = kwargs['client']
-        serialized_header, serialized_message = create_packages({'rooms': self.rooms.keys()}, Operation.LIST_ROOMS_RESP,
-                                                                'Message')
+        print(self.rooms.values())
+        serialized_header, serialized_message = create_packages(
+            list(self.rooms.keys()),
+            Operation.LIST_ROOMS_RESP,
+            message_type='Message'
+        )
         client.send_to_client(serialized_header, serialized_message)
 
     def join_room(self, **kwargs):
         print("Join Room function called")  # Implement the actual logic
+        message, client = kwargs['message'], kwargs['client']
         self.room_lock.acquire()
+        # after lock has been acquired we know the room dict is accurate
         try:
-            message, client = kwargs['message'], kwargs['client']
-            if 'room_name' not in message.payload or message.payload['room_name'] not in self.rooms:
+            room_number = message.payload
+            if room_number not in self.rooms:
                 raise NonFatalErrorException(NonFatalErrors.INVALID_JOIN_ROOM)
-            room_name = message.payload['room_name']
-            client.add_room_to_client(room_name, self.rooms[room_name][1])
+            room = self.rooms[room_number]
+            room['room_clients'].add(client.nickname)
+            client.add_room_to_client(room_number, room['room_queue'])
+            client.send_ok()
         finally:
             self.room_lock.release()
 
     def leave_room(self, **kwargs):
         print("Leave Room function called")  # Implement the actual logic
-        message, client = kwargs['message'], kwargs['client']
-        if 'room_name' in message.payload:
-            client.remove_room_from_client(message.payload['room_name'])
+        self.room_lock.acquire()
+        try:
+            message, client = kwargs['message'], kwargs['client']
+
+            room_number = message.payload
+
+            if room_number not in self.rooms:
+                client.send_ok()
+                return
+
+            room = self.rooms[room_number]
+            if client.nickname in room['room_clients']:
+                room['room_clients'].remove(client.nickname)
+            client.remove_room_from_client(room_number)
+            client.send_ok()
+        finally:
+            self.room_lock.release()
 
     def send_msg(self, **kwargs):
         print("Send Message function called")  # Implement the actual logic
         message, client = kwargs['message'], kwargs['client']
-        room_name = message.payload.get('room_name')
+        room_number = message.payload.get('room_number')
         text = message.payload.get('text')
-        if room_name is None or text is None:
+        if room_number is None or text is None:
             raise NonFatalErrorException(NonFatalErrors.MSG_FAILED)
-        message = Message(Operation.BROADCAST_MSG, text)
-        client.send_to_room(room_name, message)
+        message = create_packages(text, Operation.BROADCAST_MSG, message_type='Message')
+        client.send_to_room(room_number, message)
 
     def terminate(self, **kwargs):
         print("Terminate function called")  # Implement the actual logic
         self.client_lock.acquire()
+        self.room_lock.acquire()
         try:
             client = kwargs['client']
+            for room in self.rooms:
+                room['room_clients'].remove(client.nickname)
             client.close()
             del self.clients[client.nickname]
         finally:
+            self.room_lock.release()
             self.client_lock.release()
+
+    def list_members(self, **kwargs):
+        print("List Members function called")  # Implement the actual logic
+        client = kwargs['client']
+        serialized_header, serialized_message = create_packages(
+            {'members': list(self.clients.keys())},
+            Operation.LIST_MEMBERS_RESP,
+            message_type='Message'
+        )
+        client.send_to_client(serialized_header, serialized_message)
 
     def private_msg(self, **kwargs):
         print("Private Message function called")  # Implement the actual logic

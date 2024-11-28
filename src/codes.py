@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Tuple
 
 
 class Operation(Enum):
@@ -74,7 +75,7 @@ commands = {
         "/join_room": int,
         "/leave_room": int,
         "/list_members": None,  # Can have anything
-        "/send_msg": str,
+        "/send_msg": (int, str),
         "/broadcast_msg": str,
         "/terminate": None,  # Can have anything
         "/private_msg": str,

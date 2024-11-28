@@ -1,6 +1,6 @@
 import pickle
 from codes import NonFatalErrors, NonFatalErrorException
-MAX_PICKLED_HEADER_SIZE = 98
+MAX_PICKLED_HEADER_SIZE = 200
 
 class Header:
     def __init__(self, opcode, payload_size, ):
@@ -34,11 +34,10 @@ class Message:
 
 
 def create_packages(user_input, opcode, message_type):
-    user_input = user_input.lower()  # Convert to lowercase
     msg = None
 
     # Create a Message object based on the message type
-    # TODO: will get more complex if we do private mssage child classes
+    # TODO: will get more complex if we do private message child classes
     if message_type == "Message":
         msg = Message(opcode, user_input)
 

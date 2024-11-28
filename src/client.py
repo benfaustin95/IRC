@@ -1,16 +1,14 @@
+import pickle
 import socket
-import threading
 from functions import *
-from codes import Operation
+from message import create_packages, Header, MAX_PICKLED_HEADER_SIZE
 from codes import *
 
 import os
 import curses
-import queue
 from gui import Gui
 import time
 
-MAX_PICKLED_HEADER_SIZE = 98
 MAX_INT = 2 ** 31 - 1
 SCREEN_REFRESH_RATE = 0.01
 
@@ -68,7 +66,11 @@ class Client():
 
         #! temp map for testing
         self.command_map = {
-            "/list_rooms": self.list_rooms
+            "/list_rooms": self.list_rooms,
+            "/join_room": self.join_room,
+            "/create_room": self.create_room,
+            "/send_msg": self.send_msg,
+            "/leave_room": self.leave_room,
         }
 
     def __del__(self):
@@ -80,7 +82,6 @@ class Client():
             try:
                 # receive the handshake header of header_size
                 header_bytes_object = server_socket.recv(self.header_size)
-
                 #load object back through pickle conversion from byte re-assembly
                 header_object = pickle.loads(header_bytes_object)
 
@@ -88,7 +89,10 @@ class Client():
                     self.print_client(f"Bad Handshake object from {self.server_host}")
                     return None
 
-                if header_object.opcode not in Operation:
+                # add handling for error codes
+                if header_object.opcode in Error or header_object.opcode in NonFatalErrors:
+                    self.print_client(f"ERROR ENCOUNTERED: OPCODE from {header_object.opcode}")
+                elif header_object.opcode not in Operation:
                     self.print_client(f"Bad handshake OPCODE from {self.server_host}")
                     return None
 
@@ -296,7 +300,7 @@ class Client():
         if command == "/help":
             self.print_client(help_msg)
         else:
-            if (arg):
+            if arg:
                 self.command_map[command](arg)
             else:
                 self.command_map[command]()
@@ -307,7 +311,6 @@ class Client():
         parts = input_string.split(maxsplit=1)
         command = parts[0]
         argument = parts[1] if len(parts) > 1 else None
-
         self.print_client(f"COMMAND: {command}")
 
         if command not in commands:
@@ -319,7 +322,14 @@ class Client():
 
         if expected_type is None:
             return (True, command, argument)
-
+        elif isinstance(expected_type, tuple):
+            arguments = argument.split()
+            if len(arguments) <= 1:
+                return False, None, None
+            arg_1, arg_2 = expected_type[0](argument[0]), expected_type[1](''.join(argument[1:]))
+            if isinstance(arg_1, expected_type[0]) and isinstance(arg_2, expected_type[1]):
+                return True, command, (arg_1, arg_2)
+            return False, None, None
         elif expected_type == "file_path":
             #TODO: CUSTOM LOGIC HERE FOR VERIFICATION + FINDING PATH & UPLOAD
             if isinstance(argument, str) and len(argument) > 0:
@@ -344,6 +354,7 @@ class Client():
                     if(converted_argument > self.max_rooms):
                         self.print_client(f"!ERROR: The command '{command}' expects a number between 1 - {self.max_rooms}.")
                         return (False, None, None)
+                    return (True, command, converted_argument)
                 else:
                     self.print_client(f"!ERROR: The command '{command}' expects a number.")
                     return (False, None, None)
@@ -351,11 +362,31 @@ class Client():
                 self.print_client(f"!ERROR: The command '{command}' expects a number.")
                 return (False, None, None)
 
-
     def list_rooms(self):
         ph, pmsg = create_packages("idk what to put here", Operation.LIST_ROOMS, "Message")
         msg = (ph, pmsg)
         self.to_send.append(msg)
+
+    def join_room(self, arg):
+        serialized_message = create_packages(arg, Operation.JOIN_ROOM, message_type="Message")
+        self.to_send.append(serialized_message)
+
+    def create_room(self, arg):
+        serialized_message = create_packages(arg, Operation.CREATE_ROOM, message_type="Message")
+        self.to_send.append(serialized_message)
+
+    def send_msg(self, arg):
+        serialized_message = create_packages({'room_number': arg[0], 'text': arg[1]}, Operation.SEND_MSG,  message_type='Message')
+        self.to_send.append(serialized_message)
+
+    def leave_room(self, arg):
+        serialized_message = create_packages(arg, Operation.LEAVE_ROOM,  message_type='Message')
+        self.to_send.append(serialized_message)
+
+    def list_rooms(self):
+        serialized_message = create_packages(None, Operation.LIST_ROOMS, message_type='Message')
+        self.to_send.append(serialized_message)
+
 
 if __name__ == "__main__":
     # h = Header(Operation.TERMINATE, MAX_INT)
