@@ -4,7 +4,7 @@ import threading
 from message import get_message, MAX_MSG_BYTES, Message, get_message_len
 from codes import Operation, Error, ErrorException, NonFatalErrorException
 from functions import server_action_map, ServerActions
-from ServerClient import ServerClient
+from serverclient import ServerClient
 
 LOCAL_HOST = "127.0.0.1"
 PORT = 49152

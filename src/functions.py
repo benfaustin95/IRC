@@ -1,7 +1,7 @@
 import threading
 import queue
 from message import Message
-from ServerClient import ServerClient
+from serverclient import ServerClient
 from codes import Error, NonFatalErrors, Operation, ErrorException, NonFatalErrorException
 
 """
