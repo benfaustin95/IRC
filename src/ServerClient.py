@@ -20,6 +20,7 @@ class ServerClient:
     def send_to_client(self, msg_len: bytes, serialized_message: bytes):
         try:
             self.socket_lock.acquire()
+            print('message sent to client: ', get_message(serialized_message).payload)
             if (self.socket.fileno() == -1 or
                     self.socket.sendall(msg_len) is not None or
                     self.socket.sendall(serialized_message) is not None):

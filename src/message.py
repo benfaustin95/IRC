@@ -1,6 +1,5 @@
 import pickle
 import zlib
-
 from codes import NonFatalErrors, NonFatalErrorException
 
 MAX_MSG_BYTES = 4

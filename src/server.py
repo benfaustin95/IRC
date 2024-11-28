@@ -2,14 +2,13 @@ import queue
 import socket
 import threading
 from message import get_message, MAX_MSG_BYTES, Message, get_message_len
-from codes import Operation, Error, NonFatalErrors, ErrorException, NonFatalErrorException
+from codes import Operation, Error, ErrorException, NonFatalErrorException
 from functions import server_action_map, ServerActions
 from ServerClient import ServerClient
 
 LOCAL_HOST = "127.0.0.1"
 PORT = 49152
 MAX_QUEUE_SIZE = 5
-
 
 
 class Server(ServerActions):
@@ -120,7 +119,7 @@ class Server(ServerActions):
             # Ensure we receive the handshake message
             if msg.header.opcode is not Operation.HELLO:
                 print(f"Bad handshake OPCODE from {client_address}")  # ? DEBUG ?
-                return None
+                raise ErrorException(Error.INVALID_HELLO)
 
             print("DEBUG: waiting to receive nickname message")
             # Receive the payload (nickname)
@@ -146,15 +145,16 @@ class Server(ServerActions):
                 message = client.recv_from_client()
                 # Ensure we receive the handshake message
                 if message.header.opcode not in Operation or message.header.opcode is Operation.HELLO:
-                    raise Error.INVALID_OPCODE
+                    raise ErrorException(Error.INVALID_OPCODE)
+
                 getattr(self, server_action_map[message.header.opcode])(message=message, client=client)
+
             except socket.timeout:
                 # timeout message
                 print(f"Business timeout with {client.nickname} at {client.socket}")
             except NonFatalErrorException as e:
                 # TODO: Probably want to send the original message back in payload
                 serialized_len, serialized_message = Message(e.error, 'INVALID OPERATION').serialize()
-                print('non fatal error', e)
                 client.send_to_client(serialized_len, serialized_message)
             except ErrorException as e:
                 # TODO: Probably want to send the original message back in payload
@@ -170,6 +170,7 @@ class Server(ServerActions):
                 ).serialize()
                 client.send_to_client(serialized_header, serialized_message)
                 return
+
     # stop time
     def stop(self):
         print("Stopping server...")

@@ -78,18 +78,18 @@ class Client:
             try:
                 msg_obj = self.recv_msg()
 
-                if msg_obj.header.opcode in NonFatalErrors:
-                    # might want to add a mapping of error code to display message
-                    self.print_client(f'Non Fatal Error: {msg_obj.header.opcode}')
-                    return None
-                elif msg_obj.header.opcode in Error:
-                    self.print_client(f'Fatal Error: {msg_obj.header.opcode}')
-                    return None
-                if msg_obj.header.opcode not in Operation:
-                    self.print_client(f"Bad handshake OPCODE from {self.server_host}")
-                    return None
+                # if msg_obj.header.opcode in NonFatalErrors:
+                #     # might want to add a mapping of error code to display message
+                #     self.print_client(f'Non Fatal Error: {msg_obj.header.opcode}')
+                #     return None
+                # elif msg_obj.header.opcode in Error:
+                #     self.print_client(f'Fatal Error: {msg_obj.header.opcode}')
+                #     return None
+                # if msg_obj.header.opcode not in Operation:
+                #     self.print_client(f"Bad handshake OPCODE from {self.server_host}")
+                #     return None
 
-                msg = str(msg_obj.payload)
+                msg = f'{msg_obj.header.opcode}: {msg_obj.payload}'
                 self.print_client(msg)
 
             except Exception as e:
@@ -137,6 +137,7 @@ class Client:
     def recv_msg(self):
         msg_len = self.server_socket.recv(MAX_MSG_BYTES)
         msg_len = int.from_bytes(msg_len, byteorder='big')
+        print(f"MSG LEN: {msg_len}")
 
         msg_obj = get_message(self.server_socket.recv(msg_len))
         return msg_obj
@@ -149,14 +150,15 @@ class Client:
     def get_username(self, attempted_usernames):
         while self.running:
             user_name = input("Enter an alphanumeric username: ").strip()
-            if user_name.isalnum() and user_name not in attempted_usernames:
+            if (user_name.isalnum() and user_name not in attempted_usernames):
                 return user_name
             else:
                 print("Invalid Username")
 
+
     def business(self):
         self.print_client("~~ Welcome to the Server ~~")
-        while (self.running):
+        while(self.running):
             try:
                 if (self.outgoing_msg_queue):
                     with self.outgoing_lock:
@@ -169,13 +171,14 @@ class Client:
                 self.running = False
                 self.gui.exit()
 
+
     def start(self):
         self.running = self.connect_to_server()
 
         if (self.running):
             handshake_result = self.handshake()
-            if handshake_result:
-                listening_thread = threading.Thread(target=self.listen, args=(self.server_socket,), daemon=True)
+            if (handshake_result):
+                listening_thread = threading.Thread(target=self.listen, args=(self.server_socket, ), daemon=True)
                 listening_thread.start()
 
                 gui_thread = threading.Thread(target=curses.wrapper, args=(self.run_gui,), daemon=True)
@@ -197,6 +200,7 @@ class Client:
                 print(f"Error closing Socket: {e}")
         print("Logged out...")
 
+
     def load_messages(self):
         try:
             with self.incoming_lock:
@@ -206,6 +210,7 @@ class Client:
             self.gui.output_window.refresh()
         except curses.error as e:
             self.print_client(f"Curses error in load_messages : {e}")
+
 
     def run_gui(self, stdscr):
         self.gui = Gui(stdscr)
@@ -225,14 +230,14 @@ class Client:
                 # Input has been sent by user
                 elif ch in (curses.KEY_ENTER, 10, 13):
                     if user_input[0] == "/":
-                        if user_input.strip().lower() == "/logout":
+                        if (user_input.strip().lower() == "/logout"):
                             msg = Message(Operation.TERMINATE, "TERMINATE")
                             with self.outgoing_lock:
                                 self.outgoing_msg_queue.insert(0, msg)
                             break
-                        # ! The verify command function scares me
+                        #! The verify command function scares me
                         result, command, argument = self.verify_command(user_input)
-                        if (result):
+                        if(result):
                             self.execute_command(command, argument)
 
                     # or send message   #? What seems better, storing payloads in the outgoing queue, or full Messages objects?
@@ -253,9 +258,11 @@ class Client:
         self.gui.exit()
         self.running = False
 
+
     def print_client(self, msg):
         with self.incoming_lock:
-            self.incoming_msg_queue.insert(0, str(msg))  # Insert at the front since client-side messages should take priority
+            self.incoming_msg_queue.insert(0, str(msg)) # Insert at the front since client-side messages should take priority
+
 
     def test_send_file(self):
         notes_path = os.path.abspath("notes")
@@ -264,6 +271,7 @@ class Client:
         self.send_file(notes_path)
         self.send_file(codes_path)
         self.send_file(rar_path)
+
 
     def execute_command(self, command, arg):
         if command == "/help":
@@ -282,6 +290,7 @@ class Client:
         self.print_client(f"COMMAND: {command}")
 
         if command not in commands:
+
             self.print_client(f"!ERROR: Invalid command: {command}")
             return False, None, None
 
@@ -291,17 +300,21 @@ class Client:
             return True, command, argument
         # will probably need more expansive logic as we add more complex commands
         elif isinstance(expected_type, tuple):
-            arguments = argument.split(maxsplit=1)
-            if len(arguments) <= 1:
+            try:
+                arguments = argument.split(maxsplit=1)
+                if len(arguments) <= 1:
+                    return False, None, None
+                arg_1, arg_2 = expected_type[0](arguments[0]), expected_type[1](arguments[1])
+                if isinstance(arg_1, expected_type[0]) and isinstance(arg_2, expected_type[1]):
+                    return True, command, (arg_1, arg_2)
                 return False, None, None
-            arg_1, arg_2 = expected_type[0](arguments[0]), expected_type[1](arguments[1])
-            if isinstance(arg_1, expected_type[0]) and isinstance(arg_2, expected_type[1]):
-                return True, command, (arg_1, arg_2)
-            return False, None, None
+            except (ValueError, TypeError):
+                self.print_client(f"!ERROR: The command '{command}' expects {expected_type}.")
+                return False, None, None
         elif expected_type == "file_path":
-            # TODO: CUSTOM LOGIC HERE FOR VERIFICATION + FINDING PATH & UPLOAD
+            #TODO: CUSTOM LOGIC HERE FOR VERIFICATION + FINDING PATH & UPLOAD
             if isinstance(argument, str) and len(argument) > 0:
-                return True, command, argument
+                return (True, command, argument)
             else:
                 self.print_client(f"!ERROR: The command '{command}' expects a valid file path.")
                 return False, None, None
@@ -319,9 +332,8 @@ class Client:
                 converted_argument = expected_type(argument)
                 if isinstance(converted_argument, expected_type):
 
-                    if converted_argument > self.max_rooms:
-                        self.print_client(
-                            f"!ERROR: The command '{command}' expects a number between 1 - {self.max_rooms}.")
+                    if(converted_argument > self.max_rooms):
+                        self.print_client(f"!ERROR: The command '{command}' expects a number between 1 - {self.max_rooms}.")
                         return False, None, None
                     return True, command, converted_argument
                 else:

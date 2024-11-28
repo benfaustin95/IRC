@@ -1,7 +1,7 @@
 import threading
 import queue
-from message import Message, get_message
-from ServerClient import ServerClient, RoomMessage
+from message import Message
+from ServerClient import ServerClient
 from codes import Error, NonFatalErrors, Operation, ErrorException, NonFatalErrorException
 
 """
@@ -92,7 +92,7 @@ class ServerActions:
             # might be able to change this to room names if we would like to
             room_number = message.payload
 
-            if room_number in self.rooms:
+            if room_number in self.rooms or not isinstance(room_number, int):
                 raise NonFatalErrorException(NonFatalErrors.INVALID_CREATE_ROOM)
 
             room = {
