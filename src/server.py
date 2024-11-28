@@ -1,39 +1,28 @@
+import queue
 import socket
 import threading
-from codes import Operation
-from codes import Error
-from client import Client
-from functions import *
+from message import get_message, MAX_MSG_BYTES, Message, get_message_len
+from codes import Operation, Error, ErrorException, NonFatalErrorException
+from functions import server_action_map, ServerActions
+from serverclient import ServerClient
 
-import time
-
-MAX_MSG_BYTES = 4
 LOCAL_HOST = "127.0.0.1"
 PORT = 49152
 MAX_QUEUE_SIZE = 5
 
-class Server:
+
+class Server(ServerActions):
 
     def __init__(self, max_rooms):
-
-        self.clients = {}
-        self.max_rooms = max_rooms
-        self.rooms = [[]]
-
-        self.client_names = []
-        #! Placeholder for testing broadcast
-        self.broadcast_msg_queue = []
-        self.broadcast_lock = threading.Lock()
-
-
+        super().__init__(max_rooms)
         ####### Server Stuff ###
-        self.running = True  # Flag to control server loop
-        self.queue_size = MAX_QUEUE_SIZE
-        self.port = PORT #ephemeral port range - dynamic,temp connections used for client application, safe w/o conflicting service on system
-        self.host = LOCAL_HOST # loopback address: allows computer to communicate with itself without user external network
-        self.server = None
 
-        self.sockets = []
+        self.running = True  # Flag to control server loop
+        # message buffer size is message dependent!!!!!! LOCAL SCOPE!!!!
+        self.queue_size = MAX_QUEUE_SIZE
+        self.port = PORT  # ephemeral port range - dynamic,temp connections used for client application, safe w/o conflicting service on system
+        self.host = LOCAL_HOST  # loopback address: allows computer to communicate with itself without user external network
+        self.server = None
 
         ######### Thread Stuff ########
         self.broadcast_lock = threading.Lock()
@@ -46,20 +35,34 @@ class Server:
         self.server.listen(self.queue_size)  # enables the server to accept {queue_size}  number of connections
         self.server.settimeout(1.0)  # Timeout for accepting new connections; will throw exception: socket.timeout
 
-        #NOTE: I DONT KNOW HOW TIMEOUT WORKS VERY WELL YET
-        print(f"Server started on {self.host}:{self.port}") # ?DEBUG?
+        # NOTE: I DON'T KNOW HOW TIMEOUT WORKS VERY WELL YET
+        print(f"Server started on {self.host}:{self.port}")  # ?DEBUG?
+
+        # start lobby
+        self.rooms['lobby'] = {
+            'room_number': 'lobby',
+            'room_queue': queue.Queue(),
+        }
+        threading.Thread(
+            target=self.run_lobby,
+            args=(self.rooms['lobby'],),
+            daemon=True,
+        ).start()
 
         try:
             while self.running:
                 try:
 
-                    client_socket, client_address = self.server.accept()#accept connect socket, get the socket object, address
-                    print(f"Connection established with {client_address}")# ?DEBUG?
-                    
-                    # Spin off a thread to handle the client. Make it a daemon( Daemon threads are abruptly stopped at shutdown) should't be a problem as no persisitng data????
-                    threading.Thread(target=self.spin_off_thread, args=(client_socket, client_address), daemon=True).start()
+                    client_socket, client_address = self.server.accept()  # accept connect socket, get the socket object, address
 
-                    threading.Thread(target=self.broadcast_thread, args=(), daemon=True).start()
+                    print(f"Connection established with {client_address}")  # ?DEBUG?
+
+                    # Spin off a thread to handle the client. Make it a daemon( Daemon threads are abruptly stopped at shutdown) should't be a problem as no persisitng data????
+                    threading.Thread(
+                        target=self.spin_off_thread,
+                        args=(client_socket, client_address),
+                        daemon=True
+                    ).start()
 
                 # No connection was ready within the timeout, continue the loop
                 except socket.timeout:
@@ -67,181 +70,124 @@ class Server:
         finally:
             self.shutdown()
 
-    def broadcast_thread(self):
-        try:
-            while (self.running):
-                if (self.broadcast_msg_queue):
-                    with self.broadcast_lock:
-                        msg = self.broadcast_msg_queue.pop(0)
-                        for nickname in self.client_names:
-                            if (self.clients[nickname]):
-                                self.send_msg(msg, self.clients[nickname])
-        except Exception as e:
-            print(f"Exception in broadcast thread: {e}")
-
-
     def spin_off_thread(self, client_socket, client_address):
 
         client_socket.settimeout(600.0)  # Timeout for receiving data: 10 min
-        success = False
+        client = None
 
         try:
-            while success is False:
-                success = self.handshake(client_socket, client_address)
-
-            if success is not None:
-                self.business(client_socket, client_address,success)
+            # process handshake
+            while client is None:
+                client = self.handshake(client_socket, client_address)
+            # handshake was good, business logic time;passed socket,address, nick
+            if client is not None:
+                self.business(client)
 
         except Exception as e:
             print(f"Error with client {client_address}: {e}")
         finally:
             # Safe closing of the socket
             try:
-                # Check if the socket is open before closing
+                self.client_lock.acquire()
+                found = None
+                for name, client in self.clients.items():
+                    if client.socket == client_socket:
+                        found = name
+                        break
+
+                if found is not None:
+                    del self.clients[found]
+
                 if client_socket.fileno() != -1:
                     client_socket.close()
-                    print(f"Client {client_address} socket closed.")
+
             except socket.error as e:
                 # Handle the case where the socket is already closed or in a bad state
                 print(f"Socket error when closing client {client_address}: {e}")
             except Exception as e:
                 # Catch any other unexpected exceptions
                 print(f"Unexpected error while closing socket for {client_address}: {e}")
-
+            finally:
+                self.client_lock.release()
 
     def handshake(self, client_socket, client_address):
         try:
-            msg_obj = self.recv_msg(client_socket)
-            print(msg_obj.payload)
+            # receive the handshake header of header_size
+            msg_len = get_message_len(client_socket.recv(MAX_MSG_BYTES))
+            msg = get_message(client_socket.recv(msg_len))
 
+            # Ensure we receive the handshake message
+            if msg.header.opcode is not Operation.HELLO:
+                print(f"Bad handshake OPCODE from {client_address}")  # ? DEBUG ?
+                raise ErrorException(Error.INVALID_HELLO)
 
-            nickname = msg_obj.payload
-            if nickname in self.clients:
-                err_msg = Message(Error.TAKEN_NAME, "username taken")
-                self.send_msg(err_msg, client_socket)
-                return False
-
-            msg_response = Message(Operation.OK, "OK")
-            self.send_msg(msg_response, client_socket)
-            print("sent OK")
-
-            self.clients[nickname] = client_socket
-            self.client_names.append(nickname)
-            return nickname
-
-        except socket.timeout:
-            #No data received within the timeout, return None
-            print(f"Handshake Timeout {client_address}: socket.timeout")
-            return None
-
+            print("DEBUG: waiting to receive nickname message")
+            # Receive the payload (nickname)
+            nickname = msg.payload
+            print(f"DEBUG: Nickname {nickname}")
+            return getattr(self, server_action_map[msg.header.opcode])(
+                message=msg,
+                client_socket=client_socket,
+                client_address=client_address
+            )
         except Exception as e:
             print(f"Handshake error with {client_address}: {e}")
+            opcode = e.error if isinstance(e, ErrorException) else Error.INVALID_HELLO
+            message = "INVALID HELLO: CONNECTION TERMINATED"
+            serialized_len, serialized_message = Message(opcode, message).serialize()
+            client_socket.sendall(serialized_len)
+            client_socket.sendall(serialized_message)
             return None
 
-    def recv_msg(self, client_socket):
-        msg_len = client_socket.recv(4)
-        msg_len = int.from_bytes(msg_len, byteorder='big')
-        print(f"MSG LEN: {msg_len}")
+    def business(self, client: ServerClient):
+        while self.running:
+            try:
+                message = client.recv_from_client()
+                # Ensure we receive the handshake message
+                if message.header.opcode not in Operation or message.header.opcode is Operation.HELLO:
+                    raise ErrorException(Error.INVALID_OPCODE)
 
-        msg_obj = pickle.loads(client_socket.recv(msg_len)) 
-        return msg_obj
+                getattr(self, server_action_map[message.header.opcode])(message=message, client=client)
 
-    def send_msg(self, msg, client_socket):
-        p_msg = pickle.dumps(msg)
-        msg_len = len(p_msg).to_bytes(4, byteorder='big')
-        
-        client_socket.sendall(msg_len)
-        client_socket.sendall(p_msg)
+            except socket.timeout:
+                # timeout message
+                print(f"Business timeout with {client.nickname} at {client.socket}")
+            except NonFatalErrorException as e:
+                # TODO: Probably want to send the original message back in payload
+                serialized_len, serialized_message = Message(e.error, 'INVALID OPERATION').serialize()
+                client.send_to_client(serialized_len, serialized_message)
+            except ErrorException as e:
+                # TODO: Probably want to send the original message back in payload
+                serialized_len, serialized_message = Message(e.error, 'FATAL ERROR: CONNECTION TERMINATED').serialize()
+                client.send_to_client(serialized_len, serialized_message)
+                return
+            except Exception as e:
+                # TODO: Probably want to send the original message back in payload
+                print(f"Communication error with {client.nickname} at {client.client_address}: {e}")
+                serialized_header, serialized_message = Message(
+                    Error.GEN_ERROR,
+                    'FATAL ERROR: CONNECTION TERMINATED'
+                ).serialize()
+                client.send_to_client(serialized_header, serialized_message)
+                return
 
-    
-    def business(self, client_socket, client_address, nickname):
-        try:
-            while self.running:
-                try:
-                    msg_obj = self.recv_msg(client_socket)
-                    print(f"Received: {msg_obj.payload} from {nickname}")
-
-                    # if not isinstance(msg_obj, Message):
-                    #     print(f"Bad handshake object from {client_address}") # ? DEBUG ?
-                    #     return None
-
-                    # #Ensure we receive the handshake message
-                    # if msg_obj.opcode not in Operation:
-                    #     #send a message to the cleint indicating bad handshake
-                    #     print(f"Bad handshake OPCODE from {client_address}") # ? DEBUG ?
-                    #     return None
-                    
-
-                    # if msg_obj.opcode == Operation.TERMINATE:
-                    #     print(f"Client {client_address} requested termination.")
-                    #     return None
-
-                    print(f"OPCODE: {msg_obj.opcode}")
-                    print(f"MESSAGE: {msg_obj.payload}")
-                    if (msg_obj.opcode == Operation.BROADCAST_MSG):
-                        msg_payload = nickname + ":" + str(msg_obj.payload)
-                        msg = Message(Operation.SEND_MSG, msg_payload)
-
-                        self.broadcast_msg_queue.append(msg)
-                        # client_socket.sendall(ph)
-                        # client_socket.sendall(pmsg)
-
-                    #process into action mapped function
-                        #process r_value of aciton map
-                        #SPECIAL: check if its disconnect is call
-                    #result = func_to_run(message_object)
-
-                    # if (result is Operation.TERMINATE):
-                    #     print(f"Terminate operation")
-
-                except socket.timeout:
-                    # timeout message
-                    print(f"Business timeout with {nickname} at {client_address}")
-                    return
-
-
-        except Exception as e:
-            print(f"Communication error with {nickname} at {client_address}: {e}")
-
-
-#     # Clean up the client from the list
-#     def remove_client_connected_socket(self,client_socket):
-# #! TODO: Bring back dictionary 
-#         # remove_nickname = None
-#         # #find the key based on the client_socket
-#         # for nickname, client in self.clients.items():
-#         #     if client.socket == client_socket:
-#         #         remove_nickname = nickname
-#         #         break
-
-#         # If a key was found, remove the key-value pair from the dictionary
-#         if remove_nickname is not None:
-#             del self.clients[remove_nickname]
-#             print(f"Removed client with socket: {client_socket}") # ? DEBUG ?
-#         else:
-#             #TODO: Raise custom exception...something is really wrong
-#             print(f"No client found with socket: {client_socket}") # ? DEBUG ?
-
-
-
-    #stop time
+    # stop time
     def stop(self):
         print("Stopping server...")
         self.running = False
 
-
-    #Resources cleanup &  Close all connections
+    # Resources cleanup &  Close all connections
     def shutdown(self):
 
-        print("Shutting down server...") # ? DEBUG ?
+        print("Shutting down server...")  # ? DEBUG ?
         if self.server:
             self.server.close()
 
-        # #TODO: this isnt gonna work
+        # #TODO: this isn't gonna work
         # for nickname, client in self.clients.items():
         #     client.socket.close()
 
-        print("Server shut down.") # ? DEBUG ?
+        print("Server shut down.")  # ? DEBUG ?
 
 
 if __name__ == "__main__":
