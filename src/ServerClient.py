@@ -1,8 +1,8 @@
 import queue
 import collections
-from socket import socket
-from codes import Error, RoomCode, NonFatalErrors, Operation, NonFatalErrorException
-from message import Message, get_message, get_headers, MAX_PICKLED_HEADER_SIZE, create_packages
+from socket import socket, SHUT_RDWR, error
+from codes import Error, NonFatalErrors, Operation, NonFatalErrorException, ErrorException
+from message import get_message, Message, get_message_len, MAX_MSG_BYTES
 import threading
 
 RoomMessage = collections.namedtuple('RoomMessage', ['roomCode', 'payload'])
@@ -17,41 +17,43 @@ class ServerClient:
         self.socket_lock: threading.Lock = threading.Lock()
         self.socket_open: bool = True
 
-    def send_to_client(self, serialized_header: bytes, serialized_message: bytes):
+    def send_to_client(self, msg_len: bytes, serialized_message: bytes):
         try:
             self.socket_lock.acquire()
             if (self.socket.fileno() == -1 or
-                    self.socket.sendall(serialized_header) is not None or
+                    self.socket.sendall(msg_len) is not None or
                     self.socket.sendall(serialized_message) is not None):
                 # Should this be client closed error?
-                raise Exception(Error.GEN_ERROR)
+                raise ErrorException(Error.GEN_ERROR)
         finally:
             self.socket_lock.release()
 
     def recv_from_client(self):
-        header_bytes_object = self.socket.recv(MAX_PICKLED_HEADER_SIZE)
-        header = get_headers(header_bytes_object)
-        serialized_message = self.socket.recv(header.payload_size)
-        return header, get_message(serialized_message)
+        msg_len = get_message_len(self.socket.recv(MAX_MSG_BYTES))
+        serialized_message = self.socket.recv(msg_len)
+        return get_message(serialized_message)
 
     def close(self):
         self.socket_lock.acquire()
+
         if self.socket.fileno() != -1:
-            self.socket.close()
+            try:
+                self.socket.shutdown(SHUT_RDWR)
+                self.socket.close()
+            except error:
+                print('socket already closed....')
+
         self.socket_open = False
         self.socket_lock.release()
 
     def add_room_to_client(self, room_name: str, room_queue: queue.Queue):
         if room_name in self.room_queues:
             return
-        print(self.room_queues.keys())
         try:
-            message = create_packages(
-                f'{self.nickname} has joined the room',
+            room_queue.put(Message(
                 Operation.BROADCAST_MSG,
-                message_type='Message'
-            )
-            room_queue.put(message)
+                {'text': f'{self.nickname} has joined the room'},
+            ))
             self.room_queues[room_name] = room_queue
         except queue.ShutDown:
             raise NonFatalErrorException(NonFatalErrors.INVALID_JOIN_ROOM)
@@ -61,18 +63,16 @@ class ServerClient:
             return
 
         try:
-            message = create_packages(
-                f'{self.nickname} has left the room',
+            self.room_queues[room_name].put(Message(
                 Operation.BROADCAST_MSG,
-                message_type='Message'
-            )
-            self.room_queues[room_name].put(message)
+                {'text': f'{self.nickname} has left room'},
+            ))
         except queue.ShutDown:
             print(f'{room_name} has already been closed')
         finally:
             del self.room_queues[room_name]
 
-    def send_to_room(self, room_name: str, message):
+    def send_to_room(self, room_name: str, message: Message):
         try:
             if room_name not in self.room_queues:
                 raise NonFatalErrorException(NonFatalErrors.MSG_FAILED)
@@ -82,5 +82,4 @@ class ServerClient:
             raise NonFatalErrorException(NonFatalErrors.ROOM_CLOSED)
 
     def send_ok(self):
-        serialized_header, serialized_message = create_packages('Success', Operation.OK, message_type='Message')
-        self.send_to_client(serialized_header, serialized_message)
+        self.send_to_client(*Message(Operation.OK, 'SUCCESS').serialize())

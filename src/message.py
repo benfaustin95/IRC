@@ -1,11 +1,15 @@
 import pickle
+import zlib
+
 from codes import NonFatalErrors, NonFatalErrorException
-MAX_PICKLED_HEADER_SIZE = 200
+
+MAX_MSG_BYTES = 4
+
 
 class Header:
-    def __init__(self, opcode, payload_size, ):
+    def __init__(self, opcode, checksum):
         self.opcode = opcode
-        self.payload_size = payload_size
+        self.payload_checksum = checksum
 
     def __del__(self):
         self.opcode = None
@@ -15,73 +19,30 @@ class Header:
 class Message:
 
     def __init__(self, opcode, payload):
+        self.header = Header(opcode, self.crc32(payload))
         self.payload = payload
-        # self.payload  = self.convert_binary(payload) #Transmute the payload into binary funciton and assign
-        self.payload_size = self.size(self.payload)  # calc size of payload
 
-        self.opcode = opcode
+    def crc32(self, payload):
+        c = zlib.crc32(str(payload).encode("utf-8"))
+        return c
+
+    def serialize(self):
+        serialized_message = pickle.dumps(self)
+        return len(serialized_message).to_bytes(MAX_MSG_BYTES, byteorder='big'), serialized_message
 
     def __del__(self):
         self.payload = None
         self.payload_size = None
         self.opcode = None
 
-    def convert_binary(self, payload):
-        return 1
-
-    def size(self, payload):
-        return 1
-
-
-def create_packages(user_input, opcode, message_type):
-    msg = None
-
-    # Create a Message object based on the message type
-    # TODO: will get more complex if we do private message child classes
-    if message_type == "Message":
-        msg = Message(opcode, user_input)
-
-    # Serialize the message into a pickled object
-    pickled_msg = pickle.dumps(msg)
-
-    # Generate the header package
-    header_package = create_header_package(pickled_msg, opcode)
-
-    return header_package, pickled_msg
-
-
-def create_header_package(pickled_msg, opcode):
-    handshake_header = Header(opcode, len(pickled_msg))
-
-    # Serialize the header
-    header_pickle = pickle.dumps(handshake_header)
-    header_size = len(header_pickle)
-
-    # Add padding to ensure the header size matches MAX_PICKLED_HEADER_SIZE
-    diff = max(0, MAX_PICKLED_HEADER_SIZE - header_size)
-    padding = diff * b'\x00'
-
-    header_package = header_pickle + padding
-
-    return header_package
-
 
 def deserialize_object(serialized_object):
     if not serialized_object:
         raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
-
     try:
         return pickle.loads(serialized_object)
     except pickle.UnpicklingError:
         raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
-
-
-def get_headers(serialized_headers) -> Header:
-    header = deserialize_object(serialized_headers)
-    print(header)
-    if not isinstance(header, Header):
-        raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
-    return header
 
 
 def get_message(serialized_message) -> Message:
@@ -89,3 +50,10 @@ def get_message(serialized_message) -> Message:
     if not isinstance(message, Message):
         raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
     return message
+
+
+def get_message_len(serialized_message_len) -> int:
+    m_len = int.from_bytes(serialized_message_len, byteorder='big')
+    if m_len <= 0:
+        raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
+    return m_len

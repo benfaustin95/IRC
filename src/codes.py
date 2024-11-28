@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Tuple
 
 
 class Operation(Enum):
@@ -30,8 +29,8 @@ class Error(Enum):
     TAKEN_NAME = 3  # Sent by the server when a username has already been claimed.
     CHECKSUM_FAIL = 4  # Sent by client and/or server when a message payload has been corrupted in transit.
     MAX_REQUESTS = 5  # Sent by the server when a client has exceeded their rate limit.
-    INVALID_HELLO = 10
-    INVALID_OPCODE = 12
+    INVALID_HELLO = 6
+    INVALID_OPCODE = 7
 
 
 class ErrorException(Exception):
@@ -40,25 +39,19 @@ class ErrorException(Exception):
 
 
 class NonFatalErrors(Enum):
-    MSG_FAILED = 6  # Sent by the server when a valid message has failed to be fulfilled.
-    MSG_REJECTED = 7  # Sent by the server when an invalid message has been identified.
-    INVALID_MSG_FMT = 11
-    INVALID_CREATE_ROOM = 12
-    INVALID_JOIN_ROOM = 13
-    INVALID_LEAVE_ROOM = 14
-    MAX_ROOMS = 15
-    ROOM_CLOSED = 16
+    MSG_FAILED = 1
+    MSG_REJECTED = 2
+    INVALID_MSG_FMT = 3
+    INVALID_CREATE_ROOM = 4
+    INVALID_JOIN_ROOM = 5
+    INVALID_LEAVE_ROOM = 6
+    MAX_ROOMS = 7
+    ROOM_CLOSED = 8
 
 
 class NonFatalErrorException(Exception):
     def __init__(self, error: NonFatalErrors):
         self.error = error
-
-
-class RoomCode(Enum):
-    REMOVE_CLIENT = 1
-    ADD_CLIENT = 2
-    BROADCAST_MESSAGE = 3
 
 
 class Command(Enum):
@@ -68,21 +61,17 @@ class Command(Enum):
     NO_EXTRA_ARGS = 0
 
 
-
 commands = {
-        "/create_room": int,
-        "/list_rooms": None,  # Can have anything
-        "/join_room": int,
-        "/leave_room": int,
-        "/list_members": None,  # Can have anything
-        "/send_msg": (int, str),
-        "/broadcast_msg": str,
-        "/terminate": None,  # Can have anything
-        "/private_msg": str,
-        "/send_file": "file_path",  # Custom check for file path
-        "/ping": None,  # Can have anything
-        "/help": None
+    "/create_room": int,
+    "/list_rooms": None,  # Can have anything
+    "/join_room": int,
+    "/leave_room": int,
+    "/list_members": None,  # Can have anything
+    "/send_msg": (int, str),
+    "/broadcast_msg": str,
+    "/terminate": None,  # Can have anything
+    "/private_msg": str,
+    "/send_file": "file_path",  # Custom check for file path
+    "/ping": None,  # Can have anything
+    "/help": None
 }
-
-
-

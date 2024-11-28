@@ -1,9 +1,8 @@
-import pickle
 import threading
 import queue
-from message import Message, create_packages, get_message
+from message import Message, get_message
 from ServerClient import ServerClient, RoomMessage
-from codes import Error, NonFatalErrors, Operation, ErrorException, NonFatalErrorException, RoomCode
+from codes import Error, NonFatalErrors, Operation, ErrorException, NonFatalErrorException
 
 """
 # Action_map is a dictionary that maps the number of arguments (arg_len) to specific functions.
@@ -18,7 +17,7 @@ action_map = {
 #Call the appropriate constructor based on match.
 if opcodde in action_map:
     action_map[arg_len]()  # Now correctly passes args to _copy_constructor and _param_constructor
-#Cannot find correct argument, abort instansiation.
+#Cannot find correct argument, abort instantiation.
 else:
     raise ValueError("Invalid argument length when initializing SFTP build")
 """
@@ -32,6 +31,7 @@ server_action_map = {
     Operation.LIST_MEMBERS: 'list_members',
     Operation.SEND_MSG: 'send_msg',
     Operation.TERMINATE: 'terminate',
+    Operation.BROADCAST_MSG: 'broadcast_lobby',
     12: 'private_msg',
     13: 'forward_msg',
     14: 'forward_msg_q',
@@ -68,9 +68,14 @@ class ServerActions:
                 print(f"Nickname '{nickname}' already taken from {client_address}")  # ? DEBUG ?
                 raise ErrorException(Error.TAKEN_NAME)
             # store client in existing clients list
-            client = self.clients[nickname] = ServerClient(client_socket, client_address, nickname)
+            client = self.clients[nickname] = ServerClient(
+                client_socket,
+                client_address,
+                nickname,
+            )
             print(f"Handshake successful: {nickname} at {client_address}")  # ? DEBUG ?
             client.send_ok()
+            client.add_room_to_client('lobby', self.rooms['lobby']['room_queue'])
             return self.clients[nickname]
         finally:
             self.client_lock.release()
@@ -81,9 +86,10 @@ class ServerActions:
         try:
             message, client = kwargs['message'], kwargs['client']
 
-            if len(self.rooms) == self.max_rooms:
+            if len(self.rooms) >= self.max_rooms:
                 raise NonFatalErrorException(NonFatalErrors.MAX_ROOMS)
 
+            # might be able to change this to room names if we would like to
             room_number = message.payload
 
             if room_number in self.rooms:
@@ -107,17 +113,48 @@ class ServerActions:
         finally:
             self.room_lock.release()
 
+    def run_lobby(self, room):
+        message_queue = room['room_queue']
+        while True:
+            try:
+                message = message_queue.get(timeout=60)
+
+                if isinstance(message.payload, dict):
+                    message.payload['room_number'] = 'lobby'
+                else:
+                    message.payload = {'room_number': 'lobby', 'text': message}
+
+                serialized_message = message.serialize()
+                try:
+                    self.client_lock.acquire()
+                    for client in self.clients.values():
+                        try:
+                            client.send_to_client(*serialized_message)
+                        except:
+                            print(f'failed to broadcast lobby message to {client.nickname}')
+                finally:
+                    self.client_lock.release()
+            except queue.Empty:
+                print('no message to broadcast lobby')
+
     def run_room(self, room):
         message_queue, clients = room['room_queue'], room['room_clients']
         while room['active']:
             try:
                 message = message_queue.get(timeout=60)
+
+                if isinstance(message.payload, dict):
+                    message.payload['room_number'] = room['room_number']
+                else:
+                    message.payload = {'room_number': 'lobby', 'text': message}
+
+                serialized_message = message.serialize()
                 try:
                     self.client_lock.acquire()
                     for client in set(clients):
                         try:
                             if client in self.clients:
-                                self.clients[client].send_to_client(*message)
+                                self.clients[client].send_to_client(*serialized_message)
                             else:
                                 clients.remove(client)
                         except:
@@ -143,13 +180,11 @@ class ServerActions:
     def list_rooms(self, **kwargs):
         print("List Rooms function called")  # Implement the actual logic
         client = kwargs['client']
-        print(self.rooms.values())
-        serialized_header, serialized_message = create_packages(
-            list(self.rooms.keys()),
+        serialized_message = Message(
             Operation.LIST_ROOMS_RESP,
-            message_type='Message'
-        )
-        client.send_to_client(serialized_header, serialized_message)
+            list(self.rooms.keys()),
+        ).serialize()
+        client.send_to_client(*serialized_message)
 
     def join_room(self, **kwargs):
         print("Join Room function called")  # Implement the actual logic
@@ -172,8 +207,10 @@ class ServerActions:
         self.room_lock.acquire()
         try:
             message, client = kwargs['message'], kwargs['client']
-
             room_number = message.payload
+
+            if room_number == 'lobby':
+                raise NonFatalErrorException(NonFatalErrors.INVALID_LEAVE_ROOM)
 
             if room_number not in self.rooms:
                 client.send_ok()
@@ -182,6 +219,7 @@ class ServerActions:
             room = self.rooms[room_number]
             if client.nickname in room['room_clients']:
                 room['room_clients'].remove(client.nickname)
+
             client.remove_room_from_client(room_number)
             client.send_ok()
         finally:
@@ -190,12 +228,25 @@ class ServerActions:
     def send_msg(self, **kwargs):
         print("Send Message function called")  # Implement the actual logic
         message, client = kwargs['message'], kwargs['client']
+        if not isinstance(message.payload, dict):
+            raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
         room_number = message.payload.get('room_number')
         text = message.payload.get('text')
         if room_number is None or text is None:
-            raise NonFatalErrorException(NonFatalErrors.MSG_FAILED)
-        message = create_packages(text, Operation.BROADCAST_MSG, message_type='Message')
+            raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
+        message = Message(Operation.BROADCAST_MSG, {'text': text})
         client.send_to_room(room_number, message)
+
+    def broadcast_lobby(self, **kwargs):
+        print("Broadcast to lobby")  # Implement the actual logic
+        message, client = kwargs['message'], kwargs['client']
+        if not isinstance(message.payload, dict):
+            raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
+        text = message.payload.get('text')
+        if text is None:
+            raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
+        message = Message(Operation.BROADCAST_MSG, {'text': text})
+        client.send_to_room('lobby', message)
 
     def terminate(self, **kwargs):
         print("Terminate function called")  # Implement the actual logic
@@ -203,10 +254,12 @@ class ServerActions:
         self.room_lock.acquire()
         try:
             client = kwargs['client']
-            for room in self.rooms:
+            for room in self.rooms.values():
+                if room['room_number'] == 'lobby':
+                    continue
                 room['room_clients'].remove(client.nickname)
-            client.close()
             del self.clients[client.nickname]
+            client.close()
         finally:
             self.room_lock.release()
             self.client_lock.release()
@@ -214,12 +267,11 @@ class ServerActions:
     def list_members(self, **kwargs):
         print("List Members function called")  # Implement the actual logic
         client = kwargs['client']
-        serialized_header, serialized_message = create_packages(
-            {'members': list(self.clients.keys())},
+        serialized_message = Message(
             Operation.LIST_MEMBERS_RESP,
-            message_type='Message'
-        )
-        client.send_to_client(serialized_header, serialized_message)
+            list(self.clients.keys()),
+        ).serialize()
+        client.send_to_client(*serialized_message)
 
     def private_msg(self, **kwargs):
         print("Private Message function called")  # Implement the actual logic
