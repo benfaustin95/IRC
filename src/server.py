@@ -88,19 +88,17 @@ class Server(ServerActions):
         finally:
             # Safe closing of the socket
             try:
-                # Check if the socket is open before closing
-                if client_socket.fileno() != -1:
-                    client_socket.close()
-                    print(f"Client {client_address} socket closed.")
                 self.client_lock.acquire()
-
                 found = None
-                for (name, client) in self.clients.items():
+                for name, client in self.clients.items():
                     if client.socket == client_socket:
                         found = name
                         break
 
-                if found and self.clients[found].:
+                if found is None and client_socket.fileno() != -1:
+                    client_socket.close()
+                elif found and self.clients[found].socket_open:
+                    self.clients[found].close()
                     del self.clients[found]
 
                 self.client_lock.release()

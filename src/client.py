@@ -71,6 +71,7 @@ class Client():
             "/create_room": self.create_room,
             "/send_msg": self.send_msg,
             "/leave_room": self.leave_room,
+            "/list_members": self.list_members,
         }
 
     def __del__(self):
@@ -387,6 +388,9 @@ class Client():
         serialized_message = create_packages(None, Operation.LIST_ROOMS, message_type='Message')
         self.to_send.append(serialized_message)
 
+    def list_members(self):
+        serialized_message = create_packages(None, Operation.LIST_MEMBERS, message_type='Message')
+        self.to_send.append(serialized_message)
 
 if __name__ == "__main__":
     # h = Header(Operation.TERMINATE, MAX_INT)
