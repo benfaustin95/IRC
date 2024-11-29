@@ -1,3 +1,4 @@
+import os
 import queue
 import socket
 import threading
@@ -6,8 +7,8 @@ from codes import Operation, Error, ErrorException, NonFatalErrorException
 from functions import server_action_map, ServerActions
 from serverclient import ServerClient
 
-LOCAL_HOST = "127.0.0.1"
-PORT = 49152
+LOCAL_HOST = os.getenv("HOST", "127.0.0.1")
+PORT = int(os.getenv('PORT', 49152))
 MAX_QUEUE_SIZE = 5
 
 
