@@ -1,6 +1,9 @@
+import opcode
 import os
 import base64
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+import pickle
+from message import *
 
 """
 AES Key
@@ -43,86 +46,106 @@ Our Implementation
      encrypted payload to the recipient, who uses it to decrypt the payload. It's important to note again that the IV 
      does not need to be kept secret, but it must be unique and random for each encryption session to maintain security.
 """
+class Private_Message:
+
+    def __init__(self, opcode, payload):
+        self.header = Header(opcode, self.crc32(payload))
+        self.payload , self.iv = self.encrypt_message(payload)
+
+    def crc32(self, payload):
+        c = zlib.crc32(str(payload).encode("utf-8"))
+        return c
+
+    def serialize(self):
+        serialized_message = pickle.dumps(self)
+        return len(serialized_message).to_bytes(MAX_MSG_BYTES, byteorder='big'), serialized_message
+
+    """Load environment variables from a .env file."""
+    def load_env_file(self):
+
+        file_path  = os.path.join(os.getcwd(), '.encryption')
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"The .env file was not found at {file_path}")
+
+        with open(file_path) as f:
+            for line in f:
+                # Strip whitespace and ignore comments or empty lines
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+
+                # Split key-value pairs
+                key, _, value = line.partition('=')
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")  # Remove surrounding quotes
+
+                # Set the environment variable
+                os.environ[key] = value
+                encoded_key_from_env = os.getenv('AES_KEY')
+
+                if encoded_key_from_env is None:
+                    return False , "AES_KEY environment variable is not set"
+                else:
+                    return encoded_key_from_env
+
+    # Path to the .env file located at '[cwd]/src/.env'
+
+    # Encrypt a message with a random IV
+    def encrypt_message(self,payload):
+
+        # Retrieve the encoded key from environment variables
+        encoded_key_from_env = self.load_env_file()
+
+        # Decode the base64 encoded key back to bytes
+        key = base64.b64decode(encoded_key_from_env)
+
+        # Generate a random IV for each encryption
+        iv = os.urandom(16)
+        print("Generated IV:", iv)  # Print the generated IV for verification
+
+        # Create a Cipher object using the AES algorithm in CBC mode
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+
+        # Create an encryptor object to perform encryption
+        encryptor = cipher.encryptor()
+
+        # Encrypt the plaintext message
+        # Note: Ensure the plaintext is padded to a multiple of the block size if necessary
+        byte_s_payload = payload.encode("utf-8")
+
+        encrypted_payload = encryptor.update(byte_s_payload) + encryptor.finalize()
+
+        print("Encrypted Payload:", encrypted_payload)
+        return encrypted_payload, iv
 
 
-"""Load environment variables from a .env file."""
-def load_env_file(file_path):
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"The .env file was not found at {file_path}")
+    """ Decrypt a message using the provided IV """
+    def decrypt_message(self):
+        # Retrieve the encoded key from environment variables
+        encoded_key_from_env = self.load_env_file()
 
-    with open(file_path) as f:
-        for line in f:
-            # Strip whitespace and ignore comments or empty lines
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
+        # Decode the base64 encoded key back to bytes
+        key = base64.b64decode(encoded_key_from_env)
 
-            # Split key-value pairs
-            key, _, value = line.partition('=')
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")  # Remove surrounding quotes
+        # Create a Cipher object using the AES algorithm in CBC mode
+        cipher = Cipher(algorithms.AES(key), modes.CBC(self.iv))
 
-            # Set the environment variable
-            os.environ[key] = value
+        # Create a decryptor object to perform decryption
+        decryptor = cipher.decryptor()
 
-# Path to the .env file located at '[cwd]/src/.env'
-env_file_path = os.path.join(os.getcwd(), '.env')
-load_env_file(env_file_path)
+        plaintext = self.payload
+        # Decrypt the ciphertext back to plaintext
+        byte_s_payload = decryptor.update(plaintext) + decryptor.finalize()
 
-# Encrypt a message with a random IV
-def encrypt_message(plaintext):
-    # Retrieve the encoded key from environment variables
-    encoded_key_from_env = os.getenv('AES_KEY')
+        self.payload = byte_s_payload.decode("utf-8")
+        print("Payload:", self.payload)
 
-    if encoded_key_from_env is None:
-       return False , "AES_KEY environment variable is not set"
-
-    # Decode the base64 encoded key back to bytes
-    key = base64.b64decode(encoded_key_from_env)
-
-    # Generate a random IV for each encryption
-    iv = os.urandom(16)
-    print("Generated IV:", iv)  # Print the generated IV for verification
-
-    # Create a Cipher object using the AES algorithm in CBC mode
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
-
-    # Create an encryptor object to perform encryption
-    encryptor = cipher.encryptor()
-
-    # Encrypt the plaintext message
-    # Note: Ensure the plaintext is padded to a multiple of the block size if necessary
-    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-
-    # Return both the IV and the ciphertext
-    return iv, ciphertext
-
-""" Decrypt a message using the provided IV """
-def decrypt_message(iv, ciphertext):
-    # Retrieve the encoded key from environment variables
-    encoded_key_from_env = os.getenv('AES_KEY')
-    if encoded_key_from_env is None:
-        raise ValueError("AES_KEY environment variable is not set")
-
-    # Decode the base64 encoded key back to bytes
-    key = base64.b64decode(encoded_key_from_env)
-
-    # Create a Cipher object using the AES algorithm in CBC mode
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
-
-    # Create a decryptor object to perform decryption
-    decryptor = cipher.decryptor()
-
-    # Decrypt the ciphertext back to plaintext
-    decrypted_text = decryptor.update(ciphertext) + decryptor.finalize()
-
-    return decrypted_text
 
 
 # ----- Example  ------
-plaintext = b"a secret message"
-iv, ciphertext = encrypt_message(plaintext)
-decrypted_text = decrypt_message(iv, ciphertext)
-print("Original:", plaintext)
-print("Encrypted:", ciphertext)
-print("Decrypted:", decrypted_text)
+plaintext = "a secret message"
+msg = Private_Message(1, payload=plaintext)
+pickled_data = pickle.dumps(msg)
+print(pickled_data)
+pickle.loads(pickled_data)
+msg.decrypt_message()

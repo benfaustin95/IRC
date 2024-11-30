@@ -364,6 +364,9 @@ class Client:
     def list_members(self):
         self.outgoing_msg_queue.append(Message(Operation.LIST_MEMBERS, None))
 
+    def private_message(self,arg):
+        pass
+
     def read_file(self, filepath):
         try:
             with open(filepath, "rb") as file:

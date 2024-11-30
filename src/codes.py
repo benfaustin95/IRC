@@ -70,7 +70,7 @@ commands = {
     "/send_msg": (int, str),
     "/broadcast_msg": str,
     "/terminate": None,  # Can have anything
-    "/private_msg": str,
+    "/private_msg": (str, str),
     "/send_file": "file_path",  # Custom check for file path
     "/ping": None,  # Can have anything
     "/help": None
