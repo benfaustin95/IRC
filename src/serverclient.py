@@ -105,14 +105,14 @@ class ServerClient:
             del self.room_queues[room_name]
 
     def send_to_room(self, room_name: str | None, payload):
-        rooms = [room for name, room in self.room_queues.items() if room_name is None or room_name == name]
+        rooms = [(name, room) for name, room in self.room_queues.items() if room_name is None or room_name == name]
         if room_name is not None and not len(rooms):
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED, f'NOT IN ROOM {room_name}')
-        for room in rooms:
+        for name, room in rooms:
             try:
                 room.put(payload)
             except queue.ShutDown:
-                del self.room_queues[room_name]
+                del self.room_queues[name]
 
     def send_ok(self):
         self.send_to_client(*Message(Operation.OK, 'SUCCESS').serialize())

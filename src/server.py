@@ -1,10 +1,9 @@
-import opcode
 import os
 import queue
 import socket
 import threading
 from message import get_message, MAX_MSG_BYTES, Message, get_message_len
-from codes import Operation, Error, NonFatalErrors, ErrorException, NonFatalErrorException
+from codes import Operation, Error, ErrorException, NonFatalErrorException
 from functions import server_action_map, ServerActions
 from serverclient import ServerClient
 
