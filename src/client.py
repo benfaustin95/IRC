@@ -2,6 +2,7 @@ import socket
 from functions import *
 from codes import *
 from message import MAX_MSG_BYTES, get_message
+from enrycpt import Private_Message
 
 import os
 import curses
@@ -12,22 +13,22 @@ MAX_INT = 2 ** 31 - 1
 SCREEN_REFRESH_RATE = 0.01
 DOWNLOAD_PATH = "../downloads"
 
-help_msg = '''    
-/create_room        integer      This command requires an integer argument between 1 and {self.max_rooms} to request the server to create a room.
-/join_room          integer      This command requires an integer argument between 1 and {self.max_rooms} to join an existing room on the server.
-/leave_room         integer      This command requires an integer argument between 1 and {self.max_rooms} to leave a specified room.
+
+help_msg = """
+
+/create_room        integer      This command requires an integer argument between 1 and 12 to request the server to create a room.
+/join_room          integer      This command requires an integer argument between 1 and 12 to join an existing room on the server.
+/leave_room         integer      This command requires an integer argument between 1 and 12 to leave a specified room.
 /send_msg           string       This command requires an alphanumeric string argument to send a message to the current room.
 /broadcast_msg      string       This command requires an alphanumeric string argument to broadcast a message to all connected users.
 /private_msg        string       This command requires an alphanumeric string argument to send a private message to another user.
 /send_file          file path    This command requires a file path as an argument to send a file to the server or other users.
 /list_rooms         None         This command does not require any argument and lists all available rooms on the server.
 /list_members       None         This command does not require any argument and lists all members in the current room.
-/ping               None         This command does not require any argument and checks if the server is reachable.
 /logout             None         This command does not require any argument and logs you out of the server.
 /help               None         This command does not require any argument and provides a list of available commands.
 
-'''
-
+"""
 
 class Client:
 
@@ -35,7 +36,6 @@ class Client:
         self.max_rooms = max_rooms
         self.server_rooms = []
         self.server_host = 'localhost'
-        # self.server_host = '34.83.68.197'
         self.server_port = 49152  # ephemeral port range - dynamic,temp connections used for client application, safe w/o conflicting service on system
 
         self.incoming_msg_queue = []
@@ -48,6 +48,8 @@ class Client:
 
         self.server_socket = None
         self.pending_files = {}
+
+        self.user = None
 
         # TODO: add stubs, uncomment
         # self.command_map = {
@@ -74,6 +76,7 @@ class Client:
             "/accept_file": self.accept_file,
             "/reject_file": self.reject_file,
             "/list_files": self.list_pending_files
+            "/private_msg": self.private_msg,
         }
 
     # ? Do we need this?
@@ -85,18 +88,25 @@ class Client:
             try:
                 msg_obj = self.recv_msg()
 
-                # if msg_obj.header.opcode in NonFatalErrors:
-                #     # might want to add a mapping of error code to display message
-                #     self.print_client(f'Non Fatal Error: {msg_obj.header.opcode}')
-                #     return None
-                # elif msg_obj.header.opcode in Error:
-                #     self.print_client(f'Fatal Error: {msg_obj.header.opcode}')
-                #     return None
-                # if msg_obj.header.opcode not in Operation:
-                #     self.print_client(f"Bad handshake OPCODE from {self.server_host}")
-                #     return None
+                if msg_obj.header.opcode in NonFatalErrors:
+                    # might want to add a mapping of error code to display message
+                    self.print_client(f'Non Fatal Error: {msg_obj.header.opcode}, {msg_obj.payload}')
+                    return None
+                elif msg_obj.header.opcode in Error:
+                    self.print_client(f'Fatal Error: {msg_obj.header.opcode}')
+                    return None
+                if msg_obj.header.opcode not in Operation:
+                    self.print_client(f"Bad handshake OPCODE from {self.server_host}")
+                    return None
 
                 msg = f'{msg_obj.header.opcode}: {msg_obj.payload}'
+
+                if msg_obj.header.opcode == Operation.PRIVATE_MSG:
+                    private_msg = Private_Message(None,None)
+                    private_msg.set_data(msg_obj)
+                    msg = f'{private_msg.header.opcode}: {{{private_msg.decrypt_data()}}}'
+
+
                 self.print_client(msg)
 
                 if (msg_obj.header.opcode == Operation.FORWARD_FILE_Q):
@@ -165,13 +175,14 @@ class Client:
         while self.running:
             user_name = input("Enter an alphanumeric username: ").strip()
             if (user_name.isalnum() and user_name not in attempted_usernames):
+                self.user = user_name
                 return user_name
             else:
                 print("Invalid Username")
 
 
     def business(self):
-        self.print_client("~~ Welcome to the Server ~~")
+        self.print_client(f"~~ Welcome to the Server: {self.user} ~~")
         while(self.running):
             try:
                 if (self.outgoing_msg_queue):
@@ -280,7 +291,7 @@ class Client:
 
     def execute_command(self, command, arg):
         if command == "/help":
-            self.print_client(help_msg)
+            self.print_client(f"USER: {self.user}{help_msg}")
         elif arg:
             self.print_client(f"command: {command}")
             self.command_map[command](arg)
@@ -322,7 +333,7 @@ class Client:
                 return False, None, None
             filepath = args[0]
             user = args[1]
-            args = (filepath, user) 
+            args = (filepath, user)
             if isinstance(filepath, str) and isinstance(user, str):
                 return (True, command, args)
             else:
@@ -374,6 +385,9 @@ class Client:
     def list_members(self):
         self.outgoing_msg_queue.append(Message(Operation.LIST_MEMBERS, None))
 
+    def private_msg(self,arg):
+        self.outgoing_msg_queue.append(Private_Message(Operation.PRIVATE_MSG, {'target_user':arg[0], 'message':arg[1],'sender':self.user}))
+
     def accept_file(self, args):
         sender = args[0]
         filename = args[1]
@@ -410,7 +424,7 @@ class Client:
             recipient_name = args[1]
             payload = (recipient_name, file_data, os.path.basename(args[0]))
             self.outgoing_msg_queue.append(Message(Operation.SEND_FILE, payload))
-        
+
 
     def read_file(self, filepath):
         try:
@@ -430,7 +444,7 @@ class Client:
                 b_file.write(file_data)
         except Exception as e:
             self.print_client(f"IN write file: {e}")
-        
+
 
 if __name__ == "__main__":
     Client(max_rooms=12).start()

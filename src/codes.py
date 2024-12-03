@@ -52,8 +52,10 @@ class NonFatalErrors(Enum):
 
 
 class NonFatalErrorException(Exception):
-    def __init__(self, error: NonFatalErrors):
+
+    def __init__(self, error: NonFatalErrors, message: str = None ):
         self.error = error
+        self.message = message
 
 
 class Command(Enum):
@@ -72,7 +74,7 @@ commands = {
     "/send_msg": (int, str),
     "/broadcast_msg": str,
     "/terminate": None,  # Can have anything
-    "/private_msg": str,
+    "/private_msg": (str, str),
     "/send_file": "file_path",  # Custom check for file path
     "/accept_file": "file_path",
     "/reject_file": "file_path",
