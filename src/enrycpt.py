@@ -2,10 +2,14 @@ import opcode
 import os
 import base64
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
 import pickle
 from message import *
+from pathlib import Path
 
 """
+---------------------------------- Encryption Background Info----------------------------------------
+ 
 AES Key
 
     The AES key is a secret key used in the AES (Advanced Encryption Standard) algorithm to encrypt and decrypt data.
@@ -29,7 +33,7 @@ How They Work Together
     The IV does not need to be kept secret, but it must be unique and unpredictable for each encryption session to
     maintain security.
 
-Security Implications
+Security Info
 
     Using the same IV for multiple encryptions with the same key can lead to vulnerabilities, as it can allow attackers
     to detect patterns and potentially decrypt the data. Therefore, it is a best practice to generate a new, random IV 
@@ -46,26 +50,45 @@ Our Implementation
      encrypted payload to the recipient, who uses it to decrypt the payload. It's important to note again that the IV 
      does not need to be kept secret, but it must be unique and random for each encryption session to maintain security.
 """
-class Private_Message:
+
+
+class Private_Message(Message):
 
     def __init__(self, opcode, payload):
-        self.header = Header(opcode, self.crc32(payload))
-        self.payload , self.iv = self.encrypt_message(payload)
+        # Note: dont call super
+        self.header = None
+        self.payload = None
 
-    def crc32(self, payload):
-        c = zlib.crc32(str(payload).encode("utf-8"))
-        return c
+        if opcode and payload:
+            self.header = Header(opcode, self.crc32(payload))
 
-    def serialize(self):
-        serialized_message = pickle.dumps(self)
-        return len(serialized_message).to_bytes(MAX_MSG_BYTES, byteorder='big'), serialized_message
+            keys = ['target_user', 'message', 'iv','sender']
+            encrypted_data = self.encrypt_data(payload['target_user'], payload['message'],payload['sender'])
+
+            self.payload = dict(zip(keys, encrypted_data))  # load in encrypted data to object member payload
+
+    #Basically an upcast
+    def set_data(self, msg_obj):
+        self.header = msg_obj.header
+        self.payload = msg_obj.payload
+
+
+    def get_project_root(self) -> Path:
+        #NOTE: Project root must be the directory containing the 'src' folder
+        return Path(__file__).parent.parent
+
+    def get_encryption_file_path(self) -> Path:
+        project_root = self.get_project_root()
+        file_path = project_root / 'src' / '.encryption'
+        return file_path
 
     """Load environment variables from a .env file."""
     def load_env_file(self):
 
-        file_path  = os.path.join(os.getcwd(), '.encryption')
+        file_path = self.get_encryption_file_path()
+
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"The .env file was not found at {file_path}")
+            raise FileNotFoundError(f"The .encryption file was not found at {file_path}")
 
         with open(file_path) as f:
             for line in f:
@@ -84,15 +107,12 @@ class Private_Message:
                 encoded_key_from_env = os.getenv('AES_KEY')
 
                 if encoded_key_from_env is None:
-                    return False , "AES_KEY environment variable is not set"
+                    return False, "AES_KEY environment variable  not found"
                 else:
                     return encoded_key_from_env
 
-    # Path to the .env file located at '[cwd]/src/.env'
-
-    # Encrypt a message with a random IV
-    def encrypt_message(self,payload):
-
+    """ Encrypt payload & target_nickname with a random IV"""
+    def encrypt_data(self, payload, target_nickname,sender):
         # Retrieve the encoded key from environment variables
         encoded_key_from_env = self.load_env_file()
 
@@ -101,51 +121,126 @@ class Private_Message:
 
         # Generate a random IV for each encryption
         iv = os.urandom(16)
-        print("Generated IV:", iv)  # Print the generated IV for verification
+        # print("Generated IV:", iv)  # Print the generated IV for verification
 
         # Create a Cipher object using the AES algorithm in CBC mode
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
 
-        # Create an encryptor object to perform encryption
-        encryptor = cipher.encryptor()
+        # Create separate encryptor objects for each encryption
+        encryptor_p = cipher.encryptor()
+        encryptor_n = cipher.encryptor()
+        encryptor_s = cipher.encryptor()
 
-        # Encrypt the plaintext message
-        # Note: Ensure the plaintext is padded to a multiple of the block size if necessary
+        # Pad the payload
+        padder_payload = padding.PKCS7(algorithms.AES.block_size).padder()
         byte_s_payload = payload.encode("utf-8")
+        padded_payload = padder_payload.update(byte_s_payload) + padder_payload.finalize()
 
-        encrypted_payload = encryptor.update(byte_s_payload) + encryptor.finalize()
+        # Pad the target_nickname
+        padder_nickname = padding.PKCS7(algorithms.AES.block_size).padder()
+        byte_s_target_nickname = target_nickname.encode("utf-8")
+        padded_target_nickname = padder_nickname.update(byte_s_target_nickname) + padder_nickname.finalize()
 
-        print("Encrypted Payload:", encrypted_payload)
-        return encrypted_payload, iv
+        # Pad the sender
+        padder_sender = padding.PKCS7(algorithms.AES.block_size).padder()
+        byte_s_sender = sender.encode("utf-8")
+        padded_sender = padder_sender.update(byte_s_sender) + padder_sender.finalize()
 
+        # Encrypt the padded messages
+        encrypted_payload = encryptor_p.update(padded_payload) + encryptor_p.finalize()
+        encrypted_target_nickname = encryptor_n.update(padded_target_nickname) + encryptor_n.finalize()
+        encrypted_sender = encryptor_s.update(padded_sender) + encryptor_s.finalize()
 
-    """ Decrypt a message using the provided IV """
+        #print("Encrypted Payload:", encrypted_payload)
+        #print("Encrypted Target Nickname:", encrypted_target_nickname)
+        return encrypted_payload, encrypted_target_nickname, iv, encrypted_sender
+
     def decrypt_message(self):
         # Retrieve the encoded key from environment variables
         encoded_key_from_env = self.load_env_file()
 
         # Decode the base64 encoded key back to bytes
         key = base64.b64decode(encoded_key_from_env)
-
-        # Create a Cipher object using the AES algorithm in CBC mode
-        cipher = Cipher(algorithms.AES(key), modes.CBC(self.iv))
+        cipher = Cipher(algorithms.AES(key), modes.CBC(self.payload['iv']))
 
         # Create a decryptor object to perform decryption
         decryptor = cipher.decryptor()
 
-        plaintext = self.payload
-        # Decrypt the ciphertext back to plaintext
-        byte_s_payload = decryptor.update(plaintext) + decryptor.finalize()
+        # Decrypt the ciphertext
+        decrypted_data = decryptor.update(self.payload['message']) + decryptor.finalize()
 
-        self.payload = byte_s_payload.decode("utf-8")
-        print("Payload:", self.payload)
+        # Remove padding after decryption
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        unpadded_data = unpadder.update(decrypted_data) + unpadder.finalize()
+
+        # Decode the plaintext
+        decrypted_payload = unpadded_data.decode("utf-8")
+        return decrypted_payload
+
+    def decrypt_target_user(self):
+        # Retrieve the encoded key from environment variables encoded_key_from_env = self.load_env_file()
+        encoded_key_from_env = self.load_env_file()
+
+        # Decode the base64 encoded key back to bytes
+        key = base64.b64decode(encoded_key_from_env)
+
+        # Create a Cipher object using the AES algorithm in CBC mode
+        cipher = Cipher(algorithms.AES(key), modes.CBC(self.payload['iv']))
+
+        # Create a decryptor object to perform decryption
+        decryptor = cipher.decryptor()
+
+        # Decrypt the ciphertext
+        decrypted_data = decryptor.update(self.payload['target_user']) + decryptor.finalize()
+
+        # Remove padding after decryption
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        unpadded_data = unpadder.update(decrypted_data) + unpadder.finalize()
+
+        # Decode the plaintext
+        decrypted_target_nickname = unpadded_data.decode("utf-8")
+        return decrypted_target_nickname
+
+    def decrypt_sender(self):
+        # Retrieve the encoded key from environment variables encoded_key_from_env = self.load_env_file()
+        encoded_key_from_env = self.load_env_file()
+
+        # Decode the base64 encoded key back to bytes
+        key = base64.b64decode(encoded_key_from_env)
+
+        # Create a Cipher object using the AES algorithm in CBC mode
+        cipher = Cipher(algorithms.AES(key), modes.CBC(self.payload['iv']))
+
+        # Create a decryptor object to perform decryption
+        decryptor = cipher.decryptor()
+
+        # Decrypt the ciphertext
+        decrypted_data = decryptor.update(self.payload['sender']) + decryptor.finalize()
+
+        # Remove padding after decryption
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        unpadded_data = unpadder.update(decrypted_data) + unpadder.finalize()
+
+        # Decode the plaintext
+        decrypted_sender_nickname = unpadded_data.decode("utf-8")
+        return decrypted_sender_nickname
+
+    def decrypt_data(self):
+        return f"'sender': {self.decrypt_sender()}, 'message': '{self.decrypt_message()}'"
 
 
 
 # ----- Example  ------
-plaintext = "a secret message"
-msg = Private_Message(1, payload=plaintext)
+"""
+keys = ['target_user', 'message', 'sender']
+values = ["jarjar",  "hi", 'bob' ]
+
+t_payload = dict(zip(keys,values))
+
+msg = Private_Message(1, payload=t_payload)
 pickled_data = pickle.dumps(msg)
-print(pickled_data)
 pickle.loads(pickled_data)
-msg.decrypt_message()
+print(msg.decrypt_target_user())
+print(msg.decrypt_message())
+print(msg.decrypt_sender())
+"""

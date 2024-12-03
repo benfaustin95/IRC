@@ -47,11 +47,14 @@ class NonFatalErrors(Enum):
     INVALID_LEAVE_ROOM = 6
     MAX_ROOMS = 7
     ROOM_CLOSED = 8
+    USR_DNE = 9
 
 
 class NonFatalErrorException(Exception):
-    def __init__(self, error: NonFatalErrors):
+
+    def __init__(self, error: NonFatalErrors, message: str = None ):
         self.error = error
+        self.message = message
 
 
 class Command(Enum):

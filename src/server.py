@@ -1,8 +1,9 @@
+import opcode
 import queue
 import socket
 import threading
 from message import get_message, MAX_MSG_BYTES, Message, get_message_len
-from codes import Operation, Error, ErrorException, NonFatalErrorException
+from codes import Operation, Error, NonFatalErrors, ErrorException, NonFatalErrorException
 from functions import server_action_map, ServerActions
 from serverclient import ServerClient
 
@@ -154,12 +155,20 @@ class Server(ServerActions):
                 print(f"Business timeout with {client.nickname} at {client.socket}")
             except NonFatalErrorException as e:
                 # TODO: Probably want to send the original message back in payload
-                serialized_len, serialized_message = Message(e.error, 'INVALID OPERATION').serialize()
-                client.send_to_client(serialized_len, serialized_message)
+
+                if e.message:
+                    serialized_len, serialized_message = Message(e.error, f'{e.message}').serialize()
+                    client.send_to_client(serialized_len, serialized_message)
+                else:
+                    serialized_len, serialized_message = Message(e.error, 'INVALID OPERATION').serialize()
+                    client.send_to_client(serialized_len, serialized_message)
+
             except ErrorException as e:
+
                 # TODO: Probably want to send the original message back in payload
                 serialized_len, serialized_message = Message(e.error, 'FATAL ERROR: CONNECTION TERMINATED').serialize()
                 client.send_to_client(serialized_len, serialized_message)
+
                 return
             except Exception as e:
                 # TODO: Probably want to send the original message back in payload
