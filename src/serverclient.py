@@ -47,15 +47,11 @@ class ServerClient:
                 finally:
                     self.socket_open = False
 
-
     def add_room_to_client(self, room_name: str, room_queue: queue.Queue):
         if room_name in self.room_queues:
             return
         try:
-            room_queue.put(Message(
-                Operation.BROADCAST_MSG,
-                {'text': f'{self.nickname} has joined the room'},
-            ))
+            room_queue.put({'text': f'{self.nickname} has joined the room'})
             self.room_queues[room_name] = room_queue
         except queue.ShutDown:
             raise NonFatalErrorException(NonFatalErrors.INVALID_JOIN_ROOM)
@@ -65,20 +61,17 @@ class ServerClient:
             return
 
         try:
-            self.room_queues[room_name].put(Message(
-                Operation.BROADCAST_MSG,
-                {'text': f'{self.nickname} has left room'},
-            ))
+            self.room_queues[room_name].put({'text': f'{self.nickname} has left room'})
         except queue.ShutDown:
             print(f'{room_name} has already been closed')
         finally:
             del self.room_queues[room_name]
 
-    def send_to_room(self, room_name: str | None, message: Message):
+    def send_to_room(self, room_name: str | None, payload):
         rooms = [room for name, room in self.room_queues.items() if room_name is None or room_name == name]
         for room in rooms:
             try:
-                room.put(message)
+                room.put(payload)
             except queue.ShutDown:
                 del self.room_queues[room_name]
 

@@ -108,7 +108,7 @@ class ServerActions:
             ).start()
 
             self.rooms[room['room_number']] = room
-            client.send_to_room('lobby', Message(Operation.BROADCAST_MSG, {'text': f'room {room_number} has been created'}))
+            client.send_to_room('lobby', {'text': f'room {room_number} has been created'})
             client.add_room_to_client(room_number, room['room_queue'])
             client.send_ok()
         finally:
@@ -118,14 +118,14 @@ class ServerActions:
         message_queue = room['room_queue']
         while True:
             try:
-                message = message_queue.get(timeout=60)
+                payload = message_queue.get(timeout=60)
 
-                if isinstance(message.payload, dict):
-                    message.payload['room_number'] = 'lobby'
+                if isinstance(payload, dict):
+                    payload['room_number'] = 'lobby'
                 else:
-                    message.payload = {'room_number': 'lobby', 'text': message}
+                    payload = {'room_number': 'lobby', 'text': payload}
 
-                serialized_message = message.serialize()
+                serialized_message = Message(Operation.BROADCAST_MSG, payload).serialize()
                 try:
                     self.client_lock.acquire()
                     for client in self.clients.values():
@@ -142,14 +142,14 @@ class ServerActions:
         message_queue, clients = room['room_queue'], room['room_clients']
         while room['active']:
             try:
-                message = message_queue.get(timeout=60)
+                payload = message_queue.get(timeout=60)
 
-                if isinstance(message.payload, dict):
-                    message.payload['room_number'] = room['room_number']
+                if isinstance(payload, dict):
+                    payload['room_number'] = room['room_number']
                 else:
-                    message.payload = {'room_number': room['room_number'], 'text': message}
+                    payload = {'room_number': room['room_number'], 'text': payload}
 
-                serialized_message = message.serialize()
+                serialized_message = Message(Operation.BROADCAST_MSG, payload).serialize()
                 try:
                     self.client_lock.acquire()
                     for client in set(clients):
@@ -235,8 +235,7 @@ class ServerActions:
         text = message.payload.get('text')
         if text is None:
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
-        message = Message(Operation.BROADCAST_MSG, {'text': text})
-        client.send_to_room(room_number, message)
+        client.send_to_room(room_number, {'text': text})
 
     def broadcast_lobby(self, **kwargs):
         print("Broadcast to lobby")  # Implement the actual logic
@@ -246,8 +245,7 @@ class ServerActions:
         text = message.payload.get('text')
         if text is None:
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
-        message = Message(Operation.BROADCAST_MSG, {'text': text})
-        client.send_to_room('lobby', message)
+        client.send_to_room('lobby', {'text': text})
 
     def terminate(self, **kwargs):
         print("Terminate function called")  # Implement the actual logic

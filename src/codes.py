@@ -47,6 +47,7 @@ class NonFatalErrors(Enum):
     INVALID_LEAVE_ROOM = 6
     MAX_ROOMS = 7
     ROOM_CLOSED = 8
+    CORRUPTED_PAYLOAD = 9
 
 
 class NonFatalErrorException(Exception):
