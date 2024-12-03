@@ -147,7 +147,7 @@ class ServerActions:
                 if isinstance(message.payload, dict):
                     message.payload['room_number'] = room['room_number']
                 else:
-                    message.payload = {'room_number': 'lobby', 'text': message}
+                    message.payload = {'room_number': room['room_number'], 'text': message}
 
                 serialized_message = message.serialize()
                 try:
@@ -233,7 +233,7 @@ class ServerActions:
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
         room_number = message.payload.get('room_number')
         text = message.payload.get('text')
-        if room_number is None or text is None:
+        if text is None:
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
         message = Message(Operation.BROADCAST_MSG, {'text': text})
         client.send_to_room(room_number, message)
