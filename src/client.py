@@ -242,9 +242,8 @@ class Client:
 
                     # or send message   #? What seems better, storing payloads in the outgoing queue, or full Messages objects?
                     else:
-                        self.print_client('Invalid command')
-                        # msg = Message(Operation.BROADCAST_MSG, user_input)
-                        # self.outgoing_msg_queue.append(msg)
+                        msg = Message(Operation.SEND_MSG, {'text': user_input})
+                        self.outgoing_msg_queue.append(msg)
 
                     user_input = ""
                 elif 0 <= ch <= 255:
