@@ -192,7 +192,7 @@ class Client:
 
     def stop(self):
         self.running = False
-        if self.server_socket:
+        if self.server_socket and self.server_socket.fileno() != -1:
             try:
                 self.server_socket.shutdown(socket.SHUT_RDWR)
                 self.server_socket.close()

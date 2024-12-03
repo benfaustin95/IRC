@@ -247,22 +247,6 @@ class ServerActions:
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
         client.send_to_room('lobby', {'text': text})
 
-    def terminate(self, **kwargs):
-        print("Terminate function called")  # Implement the actual logic
-        self.client_lock.acquire()
-        self.room_lock.acquire()
-        try:
-            client = kwargs['client']
-            for room in self.rooms.values():
-                if room['room_number'] == 'lobby':
-                    continue
-                room['room_clients'].remove(client.nickname)
-            del self.clients[client.nickname]
-            client.close()
-        finally:
-            self.room_lock.release()
-            self.client_lock.release()
-
     def list_members(self, **kwargs):
         print("List Members function called")  # Implement the actual logic
         client = kwargs['client']

@@ -31,6 +31,7 @@ class Error(Enum):
     MAX_REQUESTS = 5  # Sent by the server when a client has exceeded their rate limit.
     INVALID_HELLO = 6
     INVALID_OPCODE = 7
+    SOCKET_CLOSED = 8
 
 
 class ErrorException(Exception):
@@ -70,7 +71,6 @@ commands = {
     "/list_members": None,  # Can have anything
     "/send_msg": (int, str),
     "/broadcast_msg": str,
-    "/terminate": None,  # Can have anything
     "/private_msg": str,
     "/send_file": "file_path",  # Custom check for file path
     "/ping": None,  # Can have anything

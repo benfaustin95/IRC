@@ -1,6 +1,6 @@
 import pickle
 import zlib
-from codes import NonFatalErrors, NonFatalErrorException
+from codes import NonFatalErrors, NonFatalErrorException, Error, ErrorException
 
 MAX_MSG_BYTES = 4
 
@@ -59,5 +59,5 @@ def get_message(serialized_message) -> Message:
 def get_message_len(serialized_message_len) -> int:
     m_len = int.from_bytes(serialized_message_len, byteorder='big')
     if m_len <= 0:
-        raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
+        raise ErrorException(Error.SOCKET_CLOSED)
     return m_len

@@ -147,6 +147,8 @@ class Server(ServerActions):
                 # Ensure we receive the handshake message
                 if message.header.opcode not in Operation or message.header.opcode is Operation.HELLO:
                     raise ErrorException(Error.INVALID_OPCODE)
+                elif message.header.opcode == Operation.TERMINATE:
+                    return
 
                 getattr(self, server_action_map[message.header.opcode])(message=message, client=client)
 
@@ -159,8 +161,9 @@ class Server(ServerActions):
                 client.send_to_client(serialized_len, serialized_message)
             except ErrorException as e:
                 # TODO: Probably want to send the original message back in payload
-                serialized_len, serialized_message = Message(e.error, 'FATAL ERROR: CONNECTION TERMINATED').serialize()
-                client.send_to_client(serialized_len, serialized_message)
+                if e.error is not Error.SOCKET_CLOSED:
+                    serialized_len, serialized_message = Message(e.error, 'FATAL ERROR: CONNECTION TERMINATED').serialize()
+                    client.send_to_client(serialized_len, serialized_message)
                 return
             except Exception as e:
                 # TODO: Probably want to send the original message back in payload
