@@ -75,7 +75,7 @@ class Client:
             "/send_file": self.send_file,
             "/accept_file": self.accept_file,
             "/reject_file": self.reject_file,
-            "/list_files": self.list_pending_files
+            "/list_files": self.list_pending_files,
             "/private_msg": self.private_msg,
         }
 
