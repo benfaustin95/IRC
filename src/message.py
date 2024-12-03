@@ -43,7 +43,7 @@ def deserialize_object(serialized_object):
     except pickle.UnpicklingError:
         raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
 
-
+#! isinstance checks for class inheritance, so it will return True if the object is an instance of the class you specify or any subclass of it.???
 def get_message(serialized_message) -> Message:
     message = deserialize_object(serialized_message)
     if not isinstance(message, Message):
