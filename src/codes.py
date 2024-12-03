@@ -21,6 +21,7 @@ class Operation(Enum):
     FORWARD_FILE = 16  # The server forwards a file to the recipient.
     FORWARD_FILE_Q = 17  # The server queries the client about accepting a file.
     PING = 18  # Client/Server request/response to test the connection.
+    FORWARD_FILE_REJECT = 19
 
 
 class Error(Enum):
@@ -75,6 +76,9 @@ commands = {
     "/terminate": None,  # Can have anything
     "/private_msg": (str, str),
     "/send_file": "file_path",  # Custom check for file path
+    "/accept_file": "file_path",
+    "/reject_file": "file_path",
+    "/list_files": None,
     "/ping": None,  # Can have anything
     "/help": None
 }

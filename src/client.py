@@ -11,6 +11,7 @@ import time
 
 MAX_INT = 2 ** 31 - 1
 SCREEN_REFRESH_RATE = 0.01
+DOWNLOAD_PATH = "../downloads"
 
 
 help_msg = """
@@ -46,6 +47,7 @@ class Client:
         self.outgoing_lock = threading.Lock()
 
         self.server_socket = None
+        self.pending_files = {}
 
         self.user = None
 
@@ -70,6 +72,10 @@ class Client:
             "/broadcast_msg": self.broadcast_msg,
             "/leave_room": self.leave_room,
             "/list_members": self.list_members,
+            "/send_file": self.send_file,
+            "/accept_file": self.accept_file,
+            "/reject_file": self.reject_file,
+            "/list_files": self.list_pending_files,
             "/private_msg": self.private_msg,
         }
 
@@ -103,8 +109,18 @@ class Client:
 
                 self.print_client(msg)
 
+                if (msg_obj.header.opcode == Operation.FORWARD_FILE_Q):
+                    self.print_client(f"{msg_obj.payload[0]} is requesting to send {msg_obj.payload[1]}")
+                    user = msg_obj.payload[0]
+                    filename = msg_obj.payload[1]
+                    self.pending_files[user] = filename
+                elif (msg_obj.header.opcode == Operation.FORWARD_FILE):
+                    self.print_client(f"Downloading {msg_obj.payload[0]}")
+                    self.write_file(msg_obj.payload[0], msg_obj.payload[1])
+
             except Exception as e:
                 self.print_client(f"Exception in Client().listen(): {e}")
+                self.gui.exit()
                 time.sleep(10)  # ! Sleeps are just to give enough time for the gui to print an error before exiting and setting self.running
                 self.running = False
                 break
@@ -131,7 +147,6 @@ class Client:
                 msg_obj = self.recv_msg()
                 print(f"Received: {msg_obj.payload}")
 
-                # ? Worth using a map here for only a few options?
                 if msg_obj.header.opcode == Operation.OK:
                     print(f"{msg_obj.header.opcode}")
                     return True
@@ -148,8 +163,6 @@ class Client:
     def recv_msg(self):
         msg_len = self.server_socket.recv(MAX_MSG_BYTES)
         msg_len = int.from_bytes(msg_len, byteorder='big')
-        print(f"MSG LEN: {msg_len}")
-
         msg_obj = get_message(self.server_socket.recv(msg_len))
         return msg_obj
 
@@ -241,22 +254,23 @@ class Client:
 
                 # Input has been sent by user
                 elif ch in (curses.KEY_ENTER, 10, 13):
-                    if user_input[0] == "/":
-                        if (user_input.strip().lower() == "/logout"):
-                            msg = Message(Operation.TERMINATE, "TERMINATE")
-                            with self.outgoing_lock:
-                                self.outgoing_msg_queue.insert(0, msg)
-                            break
-                        #! The verify command function scares me
-                        result, command, argument = self.verify_command(user_input)
-                        if(result):
-                            self.execute_command(command, argument)
+                    if (user_input):
+                        if user_input[0] == "/":
+                            if (user_input.strip().lower() == "/logout"):
+                                msg = Message(Operation.TERMINATE, "TERMINATE")
+                                with self.outgoing_lock:
+                                    self.outgoing_msg_queue.insert(0, msg)
+                                break
+                            #! The verify command function scares me
+                            result, command, argument = self.verify_command(user_input)
+                            if(result):
+                                self.execute_command(command, argument)
 
-                    # or send message   #? What seems better, storing payloads in the outgoing queue, or full Messages objects?
-                    else:
-                        self.print_client('Invalid command')
-                        # msg = Message(Operation.BROADCAST_MSG, user_input)
-                        # self.outgoing_msg_queue.append(msg)
+                        # or send message   #? What seems better, storing payloads in the outgoing queue, or full Messages objects?
+                        else:
+                            self.print_client('Invalid command')
+                            msg = Message(Operation.SEND_MSG, user_input)
+                            self.outgoing_msg_queue.append(msg)
 
                     user_input = ""
                 elif 0 <= ch <= 255:
@@ -275,20 +289,11 @@ class Client:
         with self.incoming_lock:
             self.incoming_msg_queue.insert(0, str(msg)) # Insert at the front since client-side messages should take priority
 
-
-    def test_send_file(self):
-        notes_path = os.path.abspath("notes")
-        codes_path = os.path.abspath("codes.py")
-        rar_path = os.path.abspath("../test_archive.zip")
-        self.send_file(notes_path)
-        self.send_file(codes_path)
-        self.send_file(rar_path)
-
-
     def execute_command(self, command, arg):
         if command == "/help":
             self.print_client(f"USER: {self.user}{help_msg}")
         elif arg:
+            self.print_client(f"command: {command}")
             self.command_map[command](arg)
         else:
             self.command_map[command]()
@@ -298,8 +303,6 @@ class Client:
         parts = input_string.split(maxsplit=1)
         command = parts[0]
         argument = parts[1] if len(parts) > 1 else None
-
-        self.print_client(f"COMMAND: {command}")
 
         if command not in commands:
 
@@ -324,11 +327,17 @@ class Client:
                 self.print_client(f"!ERROR: The command '{command}' expects {expected_type}.")
                 return False, None, None
         elif expected_type == "file_path":
-            #TODO: CUSTOM LOGIC HERE FOR VERIFICATION + FINDING PATH & UPLOAD
-            if isinstance(argument, str) and len(argument) > 0:
-                return (True, command, argument)
+            args = str(argument).split(" ")
+            if (len(args) != 2):
+                self.print_client(f"ERROR: The command '{command}' expects a valid file path and user")
+                return False, None, None
+            filepath = args[0]
+            user = args[1]
+            args = (filepath, user)
+            if isinstance(filepath, str) and isinstance(user, str):
+                return (True, command, args)
             else:
-                self.print_client(f"!ERROR: The command '{command}' expects a valid file path.")
+                self.print_client(f"!ERROR: The command '{command}' expects a valid file path and user to send to")
                 return False, None, None
 
         elif expected_type == str:
@@ -379,36 +388,63 @@ class Client:
     def private_msg(self,arg):
         self.outgoing_msg_queue.append(Private_Message(Operation.PRIVATE_MSG, {'target_user':arg[0], 'message':arg[1],'sender':self.user}))
 
+    def accept_file(self, args):
+        sender = args[0]
+        filename = args[1]
+        self.print_client("In accept file")
+        self.print_client(f"Filename: {filename}")
+        self.print_client(f"Sender: {sender}")
+        if self.pending_files.get(sender):
+            self.print_client("File exists, sending accept message")
+            self.outgoing_lock.acquire()
+            self.outgoing_msg_queue.append(Message(Operation.FORWARD_FILE, args))
+            self.outgoing_lock.release()
+
+    def reject_file(self, args):
+        sender = args[0]
+        filename = args[1]
+        if self.pending_files.get(sender):
+            self.print_client("File exists, sending rejection")
+            self.outgoing_msg_queue.append(Message(Operation.FORWARD_FILE_REJECT, args))
+            self.pending_files.pop(sender)
+        else:
+            self.print_client("Error: No file to reject")
+
+    def list_pending_files(self):
+        for user in self.pending_files:
+            self.print_client(f"{user} : {self.pending_files[user]}")
+
+
+    def send_file(self, args):
+        self.print_client(f"Args: {args}")
+        self.print_client(f"filepath: {args[0]}")
+        self.print_client(f"user: {args[1]}")
+        file_data = self.read_file(args[0])
+        if (file_data):
+            recipient_name = args[1]
+            payload = (recipient_name, file_data, os.path.basename(args[0]))
+            self.outgoing_msg_queue.append(Message(Operation.SEND_FILE, payload))
+
+
     def read_file(self, filepath):
         try:
             with open(filepath, "rb") as file:
                 file_data = file.read()
         except FileNotFoundError as e:
-            print(f"{e} : {filepath}")
+            self.print_client(f"File does not exist, please verify you entered the correct path and try again")
+            return None
 
         return file_data
 
-
-        # write_loc = os.path.abspath("../data/")
-
-        # filename = os.path.basename(filepath)
-        # write_loc = os.path.join(write_loc, filename)
-        # print(write_loc)
-
-        # try:
-        #     with open(write_loc, "wb") as b_file:
-        #         b_file.write(file_data)
-        # except Exception as e:
-        #     print(f"{e} : {write_loc}")
-
+    def write_file(self, filename, file_data):
+        write_loc = os.path.abspath(DOWNLOAD_PATH)
+        write_loc = os.path.join(write_loc, filename)
+        try:
+            with open(write_loc, "wb") as b_file:
+                b_file.write(file_data)
+        except Exception as e:
+            self.print_client(f"IN write file: {e}")
 
 
 if __name__ == "__main__":
-    # h = Header(Operation.TERMINATE, MAX_INT)
-    # print(f"Header: {h}")
-
-    # ph = pickle.dumps(h)
-    # print(f"Pickled Header: {ph}")
-    # print(f"MAX (?) Pickled Header Length: {len(ph)}")
-
     Client(max_rooms=12).start()

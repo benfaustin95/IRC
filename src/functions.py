@@ -3,6 +3,7 @@ import queue
 from message import Message
 from serverclient import ServerClient
 from codes import Error, NonFatalErrors, Operation, ErrorException, NonFatalErrorException
+import os
 
 
 server_action_map = {
@@ -18,10 +19,11 @@ server_action_map = {
     Operation.PRIVATE_MSG: 'private_msg',
     13: 'forward_msg',
     14: 'forward_msg_q',
-    15: 'send_file',
-    16: 'forward_file',
+    Operation.SEND_FILE: 'send_file',
+    Operation.FORWARD_FILE: 'forward_file',
     17: 'forward_file_q',
     18: 'ping',
+    Operation.FORWARD_FILE_REJECT: 'reject_file'
 }
 
 
@@ -310,9 +312,45 @@ class ServerActions:
 
     def send_file(self, **kwargs):
         print("Send File function called")  # Implement the actual logic
+        message, client = kwargs['message'], kwargs['client']
+        payload = (client.nickname, message.payload[2]) 
+        print(f"Payload from send file: {payload}")
+        serialized_message = Message(Operation.FORWARD_FILE_Q, payload).serialize()
+        target_user = message.payload[0]
+        
+        self.client_lock.acquire()
+        if self.clients.get(target_user) is None:
+            self.client_lock.release()
+            raise NonFatalErrorException(NonFatalErrors.USR_DNE)
+
+        self.client_lock.release()
+        target_client = self.clients[target_user]
+
+
+        target_client.store_file(serialized_message[0], serialized_message[1], client.nickname, message)
 
     def forward_file(self, **kwargs):
         print("Forward File function called")  # Implement the actual logic
+        message, client = kwargs['message'], kwargs['client']
+
+        self.client_lock.acquire()
+        if self.clients.get(client.nickname) is None:
+            raise NonFatalErrorException(NonFatalErrors.USR_DNE)
+        self.client_lock.release()
+
+        print(message.payload[0])
+        print(message.payload[1])
+        client.send_file(message.payload[0], message.payload[1])
+
+    def reject_file(self, **kwargs):
+        print("Reject File called")
+        message, client = kwargs['message'], kwargs['client']
+        self.client_lock.acquire()
+        if self.clients.get(client.nickname) is None:
+            raise NonFatalErrorException(NonFatalErrors.USR_DNE)
+        self.client_lock.release()
+        client.remove_file(message)
+
 
     def forward_file_q(self, **kwargs):
         print("Forward File Query function called")  # Implement the actual logic
