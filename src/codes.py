@@ -21,6 +21,7 @@ class Operation(Enum):
     FORWARD_FILE = 16  # The server forwards a file to the recipient.
     FORWARD_FILE_Q = 17  # The server queries the client about accepting a file.
     PING = 18  # Client/Server request/response to test the connection.
+    FORWARD_FILE_REJECT = 19
 
 
 class Error(Enum):
@@ -48,12 +49,15 @@ class NonFatalErrors(Enum):
     INVALID_LEAVE_ROOM = 6
     MAX_ROOMS = 7
     ROOM_CLOSED = 8
-    CORRUPTED_PAYLOAD = 9
+    USR_DNE = 9
+    CORRUPTED_PAYLOAD = 10
 
 
 class NonFatalErrorException(Exception):
-    def __init__(self, error: NonFatalErrors):
+
+    def __init__(self, error: NonFatalErrors, message: str | None = None ):
         self.error = error
+        self.message = message
 
 
 class Command(Enum):
@@ -71,8 +75,11 @@ commands = {
     "/list_members": None,  # Can have anything
     "/send_msg": (int, str),
     "/broadcast_msg": str,
-    "/private_msg": str,
+    "/private_msg": (str, str),
     "/send_file": "file_path",  # Custom check for file path
+    "/accept_file": "file_path",
+    "/reject_file": "file_path",
+    "/list_files": None,
     "/ping": None,  # Can have anything
     "/help": None
 }
