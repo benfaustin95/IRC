@@ -36,14 +36,12 @@ class ServerClient:
         filename = message.payload[2].strip()
         file_data = message.payload[1].strip()
         if sender not in self.pending_files:
-            self.pending_files[sender] = {} 
+            self.pending_files[sender] = {}
 
         print(f"Storing [{sender}] [{filename}]")
         self.pending_files[sender][filename] = file_data
 
-
         self.send_to_client(msg_len, serialized_msg)
-
 
     def send_file(self, sender, filename):
         if (self.has_file(sender, filename)):
@@ -69,8 +67,6 @@ class ServerClient:
             print("filename does not exist")
             raise NonFatalErrorException(NonFatalErrors.MSG_FAILED)
         return True
-
-
 
     def recv_from_client(self):
         msg_len = get_message_len(self.socket.recv(MAX_MSG_BYTES))
@@ -110,12 +106,13 @@ class ServerClient:
 
     def send_to_room(self, room_name: str | None, payload):
         rooms = [room for name, room in self.room_queues.items() if room_name is None or room_name == name]
+        if room_name is not None and not len(rooms):
+            raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED, f'NOT IN ROOM {room_name}')
         for room in rooms:
             try:
                 room.put(payload)
             except queue.ShutDown:
                 del self.room_queues[room_name]
-
 
     def send_ok(self):
         self.send_to_client(*Message(Operation.OK, 'SUCCESS').serialize())

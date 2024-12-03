@@ -36,8 +36,9 @@ class Error(Enum):
 
 
 class ErrorException(Exception):
-    def __init__(self, error: Error):
+    def __init__(self, error: Error, msg: str | None = None):
         self.error = error
+        self.message = msg
 
 
 class NonFatalErrors(Enum):

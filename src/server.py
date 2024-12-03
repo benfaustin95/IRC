@@ -134,7 +134,7 @@ class Server(ServerActions):
             )
         except Exception as e:
             print(f"Handshake error with {client_address}: {e}")
-            opcode = e.error if isinstance(e, ErrorException) else Error.INVALID_HELLO
+            opcode = e.error if isinstance(e, ErrorException) or isinstance(e, NonFatalErrorException) else Error.INVALID_HELLO
             message = "INVALID HELLO: CONNECTION TERMINATED"
             serialized_len, serialized_message = Message(opcode, message).serialize()
             client_socket.sendall(serialized_len)
@@ -157,12 +157,11 @@ class Server(ServerActions):
                 # timeout message
                 print(f"Business timeout with {client.nickname} at {client.socket}")
             except NonFatalErrorException as e:
-                # TODO: Probably want to send the original message back in payload
                 serialized_len, serialized_message = Message(e.error, e.message if e.message else 'INVALID OPERATION').serialize()
                 client.send_to_client(serialized_len, serialized_message)
             except ErrorException as e:
                 if e.error is not Error.SOCKET_CLOSED:
-                    serialized_len, serialized_message = Message(e.error, 'FATAL ERROR: CONNECTION TERMINATED').serialize()
+                    serialized_len, serialized_message = Message(e.error, e.message if e.message else 'FATAL ERROR: CONNECTION TERMINATED').serialize()
                     client.send_to_client(serialized_len, serialized_message)
                 return
             except Exception as e:
@@ -184,12 +183,17 @@ class Server(ServerActions):
     def shutdown(self):
 
         print("Shutting down server...")  # ? DEBUG ?
+
+        message = Message(Operation.TERMINATE, "SERVER CLOSED: CONNECTION TERMINATED").serialize()
+        with self.client_lock:
+            for client in self.clients.values():
+                try:
+                    client.send_to_client(*message)
+                finally:
+                    client.close()
+
         if self.server:
             self.server.close()
-
-        # #TODO: this isn't gonna work
-        # for nickname, client in self.clients.items():
-        #     client.socket.close()
 
         print("Server shut down.")  # ? DEBUG ?
 
