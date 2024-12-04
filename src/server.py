@@ -16,17 +16,12 @@ class Server(ServerActions):
 
     def __init__(self, max_rooms):
         super().__init__(max_rooms)
-        ####### Server Stuff ###
 
         self.running = True  # Flag to control server loop
-        # message buffer size is message dependent!!!!!! LOCAL SCOPE!!!!
         self.queue_size = MAX_QUEUE_SIZE
         self.port = PORT  # ephemeral port range - dynamic,temp connections used for client application, safe w/o conflicting service on system
         self.host = LOCAL_HOST  # loopback address: allows computer to communicate with itself without user external network
         self.server = None
-
-        ######### Thread Stuff ########
-        self.broadcast_lock = threading.Lock()
 
     def start(self):
 
@@ -56,9 +51,9 @@ class Server(ServerActions):
 
                     client_socket, client_address = self.server.accept()  # accept connect socket, get the socket object, address
 
-                    print(f"Connection established with {client_address}")  # ?DEBUG?
+                    print(f"Connection established with {client_address}")
 
-                    # Spin off a thread to handle the client. Make it a daemon( Daemon threads are abruptly stopped at shutdown) should't be a problem as no persisitng data????
+                    # Spin off a thread to handle the client. Make it a daemon( Daemon threads are abruptly stopped at shutdown) should't be a problem as no persisitng data
                     threading.Thread(
                         target=self.spin_off_thread,
                         args=(client_socket, client_address),
@@ -80,7 +75,7 @@ class Server(ServerActions):
             # process handshake
             while client is None:
                 client = self.handshake(client_socket, client_address)
-            # handshake was good, business logic time;passed socket,address, nick
+            # handshake was good, business logic - passed client
             if client is not None:
                 self.business(client)
 
@@ -164,7 +159,6 @@ class Server(ServerActions):
                     client.send_to_client(serialized_len, serialized_message)
                 return
             except Exception as e:
-                # TODO: Probably want to send the original message back in payload
                 print(f"Communication error with {client.nickname} at {client.client_address}: {e}")
                 serialized_header, serialized_message = Message(
                     Error.GEN_ERROR,

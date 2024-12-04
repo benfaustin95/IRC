@@ -80,6 +80,5 @@ commands = {
     "/accept_file": "file_path",
     "/reject_file": "file_path",
     "/list_files": None,
-    "/ping": None,  # Can have anything
     "/help": None
 }

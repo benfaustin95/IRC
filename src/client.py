@@ -117,7 +117,7 @@ class Client:
         while self.running:
             try:
                 msg_obj = self.recv_msg()
-                if msg_obj.header.opcode in NonFatalErrors :
+                if msg_obj.header.opcode in NonFatalErrors:
                     raise NonFatalErrorException(msg_obj.header.opcode, msg_obj.payload)
                 elif msg_obj.header.opcode in Error:
                     raise ErrorException(msg_obj.header.opcode, msg_obj.payload)
@@ -160,13 +160,14 @@ class Client:
                 msg = Message(Operation.HELLO, user_name)
                 self.send_msg(msg)
                 msg_obj = self.recv_msg()
+                print(f"Received: {msg_obj.payload}")
 
                 if msg_obj.header.opcode == Operation.OK:
+                    print(f"{msg_obj.header.opcode}")
                     return True
                 elif msg_obj.header.opcode == Error.TAKEN_NAME:
                     attempted_usernames.append(user_name)
                 else:
-                    print(msg.header.opcode)
                     raise Exception("Invalid handshake opcode from Server")
 
             except Exception as e:

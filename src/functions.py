@@ -246,6 +246,15 @@ class ServerActions:
 
         target_user = message.decrypt_target_user()
 
+        "-------------DEBUG INFO------------"
+        print(f"Private iv: {message.payload['iv']}")
+        print(f"Private Message: {message.payload['message']}")
+        print(f"Target User: {message.payload['target_user']}")
+        print(f"Sender: {message.payload['sender']}")
+        print(f"Unencrypted Target User:  {target_user}")
+        print(f"Unencrypted Sender:  {message.decrypt_sender()}")
+        print(f"Unencrypted Message:  {message.decrypt_message()}")
+
         if target_user is None or message.payload['iv'] is None or message.payload['message'] is None:
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
 
