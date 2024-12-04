@@ -20,7 +20,6 @@ class Operation(Enum):
     SEND_FILE = 15  # The client requests to send a file to the server.
     FORWARD_FILE = 16  # The server forwards a file to the recipient.
     FORWARD_FILE_Q = 17  # The server queries the client about accepting a file.
-    PING = 18  # Client/Server request/response to test the connection.
     FORWARD_FILE_REJECT = 19
 
 
@@ -32,11 +31,13 @@ class Error(Enum):
     MAX_REQUESTS = 5  # Sent by the server when a client has exceeded their rate limit.
     INVALID_HELLO = 6
     INVALID_OPCODE = 7
+    SOCKET_CLOSED = 8
 
 
 class ErrorException(Exception):
-    def __init__(self, error: Error):
+    def __init__(self, error: Error, msg: str | None = None):
         self.error = error
+        self.message = msg
 
 
 class NonFatalErrors(Enum):
@@ -49,11 +50,12 @@ class NonFatalErrors(Enum):
     MAX_ROOMS = 7
     ROOM_CLOSED = 8
     USR_DNE = 9
+    CORRUPTED_PAYLOAD = 10
 
 
 class NonFatalErrorException(Exception):
 
-    def __init__(self, error: NonFatalErrors, message: str = None ):
+    def __init__(self, error: NonFatalErrors, message: str | None = None ):
         self.error = error
         self.message = message
 
@@ -73,12 +75,10 @@ commands = {
     "/list_members": None,  # Can have anything
     "/send_msg": (int, str),
     "/broadcast_msg": str,
-    "/terminate": None,  # Can have anything
     "/private_msg": (str, str),
     "/send_file": "file_path",  # Custom check for file path
     "/accept_file": "file_path",
     "/reject_file": "file_path",
     "/list_files": None,
-    "/ping": None,  # Can have anything
     "/help": None
 }

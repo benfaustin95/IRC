@@ -22,10 +22,12 @@ class ServerClient:
         try:
             self.socket_lock.acquire()
             print('message sent to client: ', get_message(serialized_message).payload)
-            if (self.socket.fileno() == -1 or
+            if (not self.socket_open or
+                    self.socket.fileno() == -1 or
                     self.socket.sendall(msg_len) is not None or
                     self.socket.sendall(serialized_message) is not None):
                 # Should this be client closed error?
+                self.socket_open = False
                 raise ErrorException(Error.GEN_ERROR)
         finally:
             self.socket_lock.release()
@@ -34,14 +36,12 @@ class ServerClient:
         filename = message.payload[2].strip()
         file_data = message.payload[1].strip()
         if sender not in self.pending_files:
-            self.pending_files[sender] = {} 
+            self.pending_files[sender] = {}
 
         print(f"Storing [{sender}] [{filename}]")
         self.pending_files[sender][filename] = file_data
 
-
         self.send_to_client(msg_len, serialized_msg)
-
 
     def send_file(self, sender, filename):
         if (self.has_file(sender, filename)):
@@ -68,34 +68,27 @@ class ServerClient:
             raise NonFatalErrorException(NonFatalErrors.MSG_FAILED)
         return True
 
-
-
     def recv_from_client(self):
         msg_len = get_message_len(self.socket.recv(MAX_MSG_BYTES))
         serialized_message = self.socket.recv(msg_len)
         return get_message(serialized_message)
 
     def close(self):
-        self.socket_lock.acquire()
-
-        if self.socket.fileno() != -1:
-            try:
-                self.socket.shutdown(SHUT_RDWR)
-                self.socket.close()
-            except error:
-                print('socket already closed....')
-
-        self.socket_open = False
-        self.socket_lock.release()
+        with self.socket_lock:
+            if self.socket_open and self.socket.fileno() != -1:
+                try:
+                    self.socket.shutdown(SHUT_RDWR)
+                    self.socket.close()
+                except error:
+                    print('socket already closed....')
+                finally:
+                    self.socket_open = False
 
     def add_room_to_client(self, room_name: str, room_queue: queue.Queue):
         if room_name in self.room_queues:
             return
         try:
-            room_queue.put(Message(
-                Operation.BROADCAST_MSG,
-                {'text': f'{self.nickname} has joined the room'},
-            ))
+            room_queue.put({'text': f'{self.nickname} has joined the room'})
             self.room_queues[room_name] = room_queue
         except queue.ShutDown:
             raise NonFatalErrorException(NonFatalErrors.INVALID_JOIN_ROOM)
@@ -105,24 +98,21 @@ class ServerClient:
             return
 
         try:
-            self.room_queues[room_name].put(Message(
-                Operation.BROADCAST_MSG,
-                {'text': f'{self.nickname} has left room'},
-            ))
+            self.room_queues[room_name].put({'text': f'{self.nickname} has left room'})
         except queue.ShutDown:
             print(f'{room_name} has already been closed')
         finally:
             del self.room_queues[room_name]
 
-    def send_to_room(self, room_name: str, message: Message):
-        try:
-            if room_name not in self.room_queues:
-                raise NonFatalErrorException(NonFatalErrors.MSG_FAILED)
-            self.room_queues[room_name].put(message)
-        except queue.ShutDown:
-            del self.room_queues[room_name]
-            raise NonFatalErrorException(NonFatalErrors.ROOM_CLOSED)
-
+    def send_to_room(self, room_name: str | None, payload):
+        rooms = [(name, room) for name, room in self.room_queues.items() if room_name is None or room_name == name]
+        if room_name is not None and not len(rooms):
+            raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED, f'NOT IN ROOM {room_name}')
+        for name, room in rooms:
+            try:
+                room.put(payload)
+            except queue.ShutDown:
+                del self.room_queues[name]
 
     def send_ok(self):
         self.send_to_client(*Message(Operation.OK, 'SUCCESS').serialize())

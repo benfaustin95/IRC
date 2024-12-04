@@ -1,6 +1,6 @@
 import pickle
 import zlib
-from codes import NonFatalErrors, NonFatalErrorException
+from codes import NonFatalErrors, NonFatalErrorException, Error, ErrorException
 
 MAX_MSG_BYTES = 4
 
@@ -17,13 +17,16 @@ class Header:
 
 class Message:
 
-    def __init__(self, opcode, payload):
-        self.header = Header(opcode, self.crc32(payload))
+    def __init__(self, opcode, payload=None):
         self.payload = payload
+        self.header = Header(opcode, self.crc32())
 
-    def crc32(self, payload):
-        c = zlib.crc32(str(payload).encode("utf-8"))
+    def crc32(self):
+        c = zlib.crc32(str(self.payload).encode("utf-8"))
         return c
+
+    def validate_check_sum(self):
+        return self.crc32() == self.header.payload_checksum
 
     def serialize(self):
         serialized_message = pickle.dumps(self)
@@ -48,11 +51,13 @@ def get_message(serialized_message) -> Message:
     message = deserialize_object(serialized_message)
     if not isinstance(message, Message):
         raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
+    if not message.validate_check_sum():
+        raise NonFatalErrorException(NonFatalErrors.CORRUPTED_PAYLOAD)
     return message
 
 
 def get_message_len(serialized_message_len) -> int:
     m_len = int.from_bytes(serialized_message_len, byteorder='big')
     if m_len <= 0:
-        raise NonFatalErrorException(NonFatalErrors.INVALID_MSG_FMT)
+        raise ErrorException(Error.SOCKET_CLOSED)
     return m_len

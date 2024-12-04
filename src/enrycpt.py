@@ -60,12 +60,14 @@ class Private_Message(Message):
         self.payload = None
 
         if opcode and payload:
-            self.header = Header(opcode, self.crc32(payload))
-
             keys = ['target_user', 'message', 'iv','sender']
             encrypted_data = self.encrypt_data(payload['target_user'], payload['message'],payload['sender'])
 
             self.payload = dict(zip(keys, encrypted_data))  # load in encrypted data to object member payload
+
+            self.header = Header(opcode, self.crc32())
+
+
 
     #Basically an upcast
     def set_data(self, msg_obj):

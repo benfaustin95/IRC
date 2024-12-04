@@ -1,7 +1,7 @@
 import socket
 from functions import *
 from codes import *
-from message import MAX_MSG_BYTES, get_message
+from message import MAX_MSG_BYTES, get_message, get_message_len
 from enrycpt import Private_Message
 
 import os
@@ -51,18 +51,6 @@ class Client:
 
         self.user = None
 
-        # TODO: add stubs, uncomment
-        # self.command_map = {
-        #     "/create_room": self.create_room,
-        #     "/list_rooms": self.list_rooms,
-        #     "/join_room": self.join_room,
-        #     "/leave_room": self.leave_room,
-        #     "/list_members": self.list_members,
-        #     "/private_msg": self.private_msg,
-        #     "/send_file": self.send_file,
-        #     "/ping": self.ping
-        # }
-
         # ! temp map for testing
         self.command_map = {
             "/list_rooms": self.list_rooms,
@@ -79,7 +67,49 @@ class Client:
             "/private_msg": self.private_msg,
         }
 
-    # ? Do we need this?
+        self.rec_action_map = {
+            Operation.LIST_ROOMS_RESP: self.rev_list_rooms,
+            Operation.LIST_MEMBERS_RESP: self.rev_list_members,
+            Operation.BROADCAST_MSG: self.rec_msg,
+            Operation.PRIVATE_MSG: self.rec_private_msg,
+            Operation.TERMINATE: self.rec_terminate,
+            Operation.FORWARD_FILE_Q: self.rec_forward_file_q,
+            Operation.FORWARD_FILE: self.rec_forward_file,
+        }
+
+    def rev_list_rooms(self, msg_obj: Message):
+        out = ['Rooms:\n']
+        for i, room in enumerate(msg_obj.payload):
+            out.append(f'Room {i+1}: {room}')
+        self.print_client(' '.join(out))
+
+    def rev_list_members(self, msg_obj: Message):
+        out = ['Members:\n']
+        for mem in msg_obj.payload:
+            out.append(f'Member {mem}')
+        self.print_client(' '.join(out))
+
+    def rec_msg(self, msg_obj: Message):
+        self.print_client(f'Room {msg_obj.payload.get("room_number")}: {msg_obj.payload.get("text")}')
+
+    def rec_private_msg(self, msg_obj: Message):
+        private_msg = Private_Message(None,None)
+        private_msg.set_data(msg_obj)
+        self.print_client(f'PRIVATE MESSAGE: {private_msg.decrypt_data()}')
+
+    def rec_terminate(self, msg_obj: Message):
+        raise ErrorException(Error.SOCKET_CLOSED, 'SERVER CLOSED')
+
+    def rec_forward_file_q(self, msg_obj: Message):
+        self.print_client(f"{msg_obj.payload[0]} is requesting to send {msg_obj.payload[1]}")
+        user = msg_obj.payload[0]
+        filename = msg_obj.payload[1]
+        self.pending_files[user] = filename
+
+    def rec_forward_file(self, msg_obj: Message):
+        self.print_client(f"Downloading {msg_obj.payload[0]}")
+        self.write_file(msg_obj.payload[0], msg_obj.payload[1])
+
     def __del__(self):
         pass
 
@@ -87,44 +117,29 @@ class Client:
         while self.running:
             try:
                 msg_obj = self.recv_msg()
-
                 if msg_obj.header.opcode in NonFatalErrors:
-                    # might want to add a mapping of error code to display message
-                    self.print_client(f'Non Fatal Error: {msg_obj.header.opcode}, {msg_obj.payload}')
-                    return None
+                    raise NonFatalErrorException(msg_obj.header.opcode, msg_obj.payload)
                 elif msg_obj.header.opcode in Error:
-                    self.print_client(f'Fatal Error: {msg_obj.header.opcode}')
-                    return None
-                if msg_obj.header.opcode not in Operation:
-                    self.print_client(f"Bad handshake OPCODE from {self.server_host}")
-                    return None
+                    raise ErrorException(msg_obj.header.opcode, msg_obj.payload)
+                elif msg_obj.header.opcode not in Operation:
+                    raise ErrorException(Error.INVALID_OPCODE, "CONNECTION CLOSED: INVALID OPCODE FROM SERVER")
+                elif msg_obj.header.opcode not in self.rec_action_map:
+                    continue
 
-                msg = f'{msg_obj.header.opcode}: {msg_obj.payload}'
+                self.rec_action_map[msg_obj.header.opcode](msg_obj)
 
-                if msg_obj.header.opcode == Operation.PRIVATE_MSG:
-                    private_msg = Private_Message(None,None)
-                    private_msg.set_data(msg_obj)
-                    msg = f'{private_msg.header.opcode}: {{{private_msg.decrypt_data()}}}'
-
-
-                self.print_client(msg)
-
-                if (msg_obj.header.opcode == Operation.FORWARD_FILE_Q):
-                    self.print_client(f"{msg_obj.payload[0]} is requesting to send {msg_obj.payload[1]}")
-                    user = msg_obj.payload[0]
-                    filename = msg_obj.payload[1]
-                    self.pending_files[user] = filename
-                elif (msg_obj.header.opcode == Operation.FORWARD_FILE):
-                    self.print_client(f"Downloading {msg_obj.payload[0]}")
-                    self.write_file(msg_obj.payload[0], msg_obj.payload[1])
-
+            except NonFatalErrorException as e:
+                self.print_client(f'{e.error} {e.message if e.message is not None else "Non Fatal Error"}')
+            except ErrorException as e:
+                self.print_client(e.message if e.message is not None else "Fatal Error: Connection Closed")
+                break
             except Exception as e:
-                self.print_client(f"Exception in Client().listen(): {e}")
-                self.gui.exit()
-                time.sleep(10)  # ! Sleeps are just to give enough time for the gui to print an error before exiting and setting self.running
-                self.running = False
+                self.print_client(f"Fatal Error: Connection Closed {e}")
                 break
 
+        time.sleep(10)  # ! Sleeps are just to give enough time for the gui to print an error before exiting and setting self.running
+        self.gui.exit()
+        self.running = False
         server_socket.close()
 
     def connect_to_server(self):
@@ -161,8 +176,7 @@ class Client:
                 return False
 
     def recv_msg(self):
-        msg_len = self.server_socket.recv(MAX_MSG_BYTES)
-        msg_len = int.from_bytes(msg_len, byteorder='big')
+        msg_len = get_message_len(self.server_socket.recv(MAX_MSG_BYTES))
         msg_obj = get_message(self.server_socket.recv(msg_len))
         return msg_obj
 
@@ -179,7 +193,6 @@ class Client:
                 return user_name
             else:
                 print("Invalid Username")
-
 
     def business(self):
         self.print_client(f"~~ Welcome to the Server: {self.user} ~~")
@@ -217,7 +230,7 @@ class Client:
 
     def stop(self):
         self.running = False
-        if self.server_socket:
+        if self.server_socket and self.server_socket.fileno() != -1:
             try:
                 self.server_socket.shutdown(socket.SHUT_RDWR)
                 self.server_socket.close()
@@ -265,11 +278,8 @@ class Client:
                             result, command, argument = self.verify_command(user_input)
                             if(result):
                                 self.execute_command(command, argument)
-
-                        # or send message   #? What seems better, storing payloads in the outgoing queue, or full Messages objects?
                         else:
-                            self.print_client('Invalid command')
-                            msg = Message(Operation.SEND_MSG, user_input)
+                            msg = Message(Operation.SEND_MSG, {'text': user_input})
                             self.outgoing_msg_queue.append(msg)
 
                     user_input = ""
