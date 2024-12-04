@@ -20,7 +20,6 @@ class Operation(Enum):
     SEND_FILE = 15  # The client requests to send a file to the server.
     FORWARD_FILE = 16  # The server forwards a file to the recipient.
     FORWARD_FILE_Q = 17  # The server queries the client about accepting a file.
-    PING = 18  # Client/Server request/response to test the connection.
     FORWARD_FILE_REJECT = 19
 
 
