@@ -80,17 +80,17 @@ class Client:
     def rev_list_rooms(self, msg_obj: Message):
         out = ['Rooms:\n']
         for i, room in enumerate(msg_obj.payload):
-            out.append(f'Room {i+1}: {room}')
+            out.append(f'Room : {room}\n')
         self.print_client(' '.join(out))
 
     def rev_list_members(self, msg_obj: Message):
         out = ['Members:\n']
         for mem in msg_obj.payload:
-            out.append(f'Member {mem}')
+            out.append(f'Member {mem}\n')
         self.print_client(' '.join(out))
 
     def rec_msg(self, msg_obj: Message):
-        self.print_client(f'Room {msg_obj.payload.get("room_number")}: {msg_obj.payload.get("text")}')
+        self.print_client(f'{msg_obj.payload.get("room_number")} - {msg_obj.payload.get("sending_client", "Server")}: {msg_obj.payload.get("text")}')
 
     def rec_private_msg(self, msg_obj: Message):
         private_msg = Private_Message(None,None)

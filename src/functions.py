@@ -89,7 +89,7 @@ class ServerActions:
             ).start()
 
             self.rooms[room['room_number']] = room
-            client.send_to_room('lobby', {'text': f'room {room_number} has been created'})
+            client.send_to_room('lobby', {'text': f'room {room_number} has been created', 'sending_client': 'Server'})
             client.add_room_to_client(room_number, room['room_queue'])
             client.send_ok()
         finally:
