@@ -108,6 +108,13 @@ class ServerClient:
         rooms = [(name, room) for name, room in self.room_queues.items() if room_name is None or room_name == name]
         if room_name is not None and not len(rooms):
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED, f'NOT IN ROOM {room_name}')
+
+        if not isinstance(payload, dict):
+            raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED, f'SERVER FAILED TO FORMAT MESSAGE')
+
+        if 'sending_client' not in payload:
+            payload['sending_client'] = self.nickname
+
         for name, room in rooms:
             try:
                 room.put(payload)
