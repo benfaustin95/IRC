@@ -22,7 +22,9 @@ help_msg = """
 /send_msg           string       This command requires an alphanumeric string argument to send a message to the current room.
 /broadcast_msg      string       This command requires an alphanumeric string argument to broadcast a message to all connected users.
 /private_msg        string       This command requires an alphanumeric string argument to send a private message to another user.
-/send_file          file path    This command requires a file path as an argument to send a file to the server or other users.
+/send_file          filename username    This command requires a file path as an argument to send a file to the server or other users.
+/accept_file        username filename    This command requires a username and a filename to accept a pending sent file 
+/reject_file        username filename    This command requires a username and a filename to reject a pending sent file
 /list_rooms         None         This command does not require any argument and lists all available rooms on the server.
 /list_members       None         This command does not require any argument and lists all members in the current room.
 /logout             None         This command does not require any argument and logs you out of the server.
