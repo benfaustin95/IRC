@@ -14,7 +14,7 @@ AES Key
 
     The AES key is a secret key used in the AES (Advanced Encryption Standard) algorithm to encrypt and decrypt data.
     It can be 128, 192, or 256 bits long.
-    The key is crucial for the encryption process as it determines the output of the encryption.
+    The key is mandatory for the encryption process as it determines the output of the encryption.
     Without the correct key, decrypting the data back to its original form is practically impossible.
 
 Initialization Vector (IV)
@@ -35,7 +35,7 @@ How They Work Together
 
 Security Info
 
-    Using the same IV for multiple encryptions with the same key can lead to vulnerabilities, as it can allow attackers
+    Using the same IV for multiple encryption's with the same key can lead to vulnerabilities, as it can allow attackers
     to detect patterns and potentially decrypt the data. Therefore, it is a best practice to generate a new, random IV 
     for each  encryption operation and store it alongside the ciphertext.  This way, it can be used during decryption
     to retrieve the original plaintext.
@@ -49,13 +49,15 @@ Our Implementation
      is encrypted multiple times, the resulting ciphertext will be different each time. The IV is sent along with the 
      encrypted payload to the recipient, who uses it to decrypt the payload. It's important to note again that the IV 
      does not need to be kept secret, but it must be unique and random for each encryption session to maintain security.
+     Encryption is most susceptible if the AES key is used to encrypt the payload that is stored in the .encryption file
+     is made aware to any one. For the program it is only ever loaded in as a environment variable and called and declared
+     as a variable in limited method scopes, never longer than need.
 """
 
 
 class Private_Message(Message):
 
     def __init__(self, opcode, payload):
-        # Note: dont call super
         self.header = None
         self.payload = None
 
@@ -63,22 +65,22 @@ class Private_Message(Message):
             keys = ['target_user', 'message', 'iv','sender']
             encrypted_data = self.encrypt_data(payload['target_user'], payload['message'],payload['sender'])
 
-            self.payload = dict(zip(keys, encrypted_data))  # load in encrypted data to object member payload
+            self.payload = dict(zip(keys, encrypted_data))
 
             self.header = Header(opcode, self.crc32())
 
 
-
-    #Basically an upcast
+    """Helper Method to Set data of class"""
     def set_data(self, msg_obj):
         self.header = msg_obj.header
         self.payload = msg_obj.payload
 
-
+    """ Get root filepath project """
     def get_project_root(self) -> Path:
         #NOTE: Project root must be the directory containing the 'src' folder
         return Path(__file__).parent.parent
 
+    """ Get the complete file path """
     def get_encryption_file_path(self) -> Path:
         project_root = self.get_project_root()
         file_path = project_root / 'src' / '.encryption'
@@ -94,15 +96,11 @@ class Private_Message(Message):
 
         with open(file_path) as f:
             for line in f:
-                # Strip whitespace and ignore comments or empty lines
+
                 line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
 
                 # Split key-value pairs
                 key, _, value = line.partition('=')
-                key = key.strip()
-                value = value.strip().strip('"').strip("'")  # Remove surrounding quotes
 
                 # Set the environment variable
                 os.environ[key] = value
@@ -112,6 +110,7 @@ class Private_Message(Message):
                     return False, "AES_KEY environment variable  not found"
                 else:
                     return encoded_key_from_env
+
 
     """ Encrypt payload & target_nickname with a random IV"""
     def encrypt_data(self, payload, target_nickname,sender):
@@ -123,7 +122,6 @@ class Private_Message(Message):
 
         # Generate a random IV for each encryption
         iv = os.urandom(16)
-        # print("Generated IV:", iv)  # Print the generated IV for verification
 
         # Create a Cipher object using the AES algorithm in CBC mode
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
@@ -153,8 +151,6 @@ class Private_Message(Message):
         encrypted_target_nickname = encryptor_n.update(padded_target_nickname) + encryptor_n.finalize()
         encrypted_sender = encryptor_s.update(padded_sender) + encryptor_s.finalize()
 
-        #print("Encrypted Payload:", encrypted_payload)
-        #print("Encrypted Target Nickname:", encrypted_target_nickname)
         return encrypted_payload, encrypted_target_nickname, iv, encrypted_sender
 
     def decrypt_message(self):
@@ -204,7 +200,7 @@ class Private_Message(Message):
         return decrypted_target_nickname
 
     def decrypt_sender(self):
-        # Retrieve the encoded key from environment variables encoded_key_from_env = self.load_env_file()
+        # Retrieve the encoded key from environment variables
         encoded_key_from_env = self.load_env_file()
 
         # Decode the base64 encoded key back to bytes
@@ -227,22 +223,7 @@ class Private_Message(Message):
         decrypted_sender_nickname = unpadded_data.decode("utf-8")
         return decrypted_sender_nickname
 
+    "Method to be invoked by client up receive of Private MMessage class"
     def decrypt_data(self):
         return f"'sender': {self.decrypt_sender()}, 'message': '{self.decrypt_message()}'"
 
-
-
-# ----- Example  ------
-"""
-keys = ['target_user', 'message', 'sender']
-values = ["jarjar",  "hi", 'bob' ]
-
-t_payload = dict(zip(keys,values))
-
-msg = Private_Message(1, payload=t_payload)
-pickled_data = pickle.dumps(msg)
-pickle.loads(pickled_data)
-print(msg.decrypt_target_user())
-print(msg.decrypt_message())
-print(msg.decrypt_sender())
-"""
