@@ -333,7 +333,7 @@ class Client:
                 if isinstance(arg_1, expected_type[0]) and isinstance(arg_2, expected_type[1]):
                     return True, command, (arg_1, arg_2)
                 return False, None, None
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, AttributeError):
                 self.print_client(f"!ERROR: The command '{command}' expects {expected_type}.")
                 return False, None, None
         elif expected_type == "file_path":

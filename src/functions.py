@@ -253,7 +253,6 @@ class ServerActions:
         print(f"Sender: {message.payload['sender']}")
         print(f"Unencrypted Target User:  {target_user}")
         print(f"Unencrypted Sender:  {message.decrypt_sender()}")
-        print(f"Unencrypted Message:  {message.decrypt_message()}")
 
         if target_user is None or message.payload['iv'] is None or message.payload['message'] is None:
             raise NonFatalErrorException(NonFatalErrors.MSG_REJECTED)
