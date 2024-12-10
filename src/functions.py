@@ -294,7 +294,6 @@ class ServerActions:
 
         with self.client_lock:
             if self.clients.get(target_user) is None:
-                self.client_lock.release()
                 raise NonFatalErrorException(NonFatalErrors.USR_DNE)
             target_client = self.clients[target_user]
             target_client.store_file(serialized_message[0], serialized_message[1], client.nickname, message)
