@@ -268,18 +268,14 @@ class ServerActions:
         print("Send Private Message function called")  # Implement the actual logic
         target_user,message, client = kwargs['target_user'], kwargs['message'], kwargs['client']
 
-        self.client_lock.acquire()
-        #check if the target_user is on the system
-        if self.clients.get(target_user) is None:
-            print("Target User not found")
-            raise NonFatalErrorException(NonFatalErrors.USR_DNE, f'TARGET USER DOSE NOT EXIST: {target_user}')
-
-        target_client = self.clients[target_user] #client object referencing target user
-
-        self.client_lock.release()
-
-        print("Sending Private Message")
-        target_client.send_to_client(message[0],message[1])
+        with self.client_lock:
+            #check if the target_user is on the system
+            if self.clients.get(target_user) is None:
+                print("Target User not found")
+                raise NonFatalErrorException(NonFatalErrors.USR_DNE, f'TARGET USER DOSE NOT EXIST: {target_user}')
+            target_client = self.clients[target_user] #client object referencing target user
+            print("Sending Private Message")
+            target_client.send_to_client(message[0],message[1])
 
 
     def forward_msg(self, **kwargs):
@@ -296,38 +292,31 @@ class ServerActions:
         serialized_message = Message(Operation.FORWARD_FILE_Q, payload).serialize()
         target_user = message.payload[0]
 
-        self.client_lock.acquire()
-        if self.clients.get(target_user) is None:
-            self.client_lock.release()
-            raise NonFatalErrorException(NonFatalErrors.USR_DNE)
-
-        self.client_lock.release()
-        target_client = self.clients[target_user]
-
-
-        target_client.store_file(serialized_message[0], serialized_message[1], client.nickname, message)
+        with self.client_lock:
+            if self.clients.get(target_user) is None:
+                self.client_lock.release()
+                raise NonFatalErrorException(NonFatalErrors.USR_DNE)
+            target_client = self.clients[target_user]
+            target_client.store_file(serialized_message[0], serialized_message[1], client.nickname, message)
 
     def forward_file(self, **kwargs):
         print("Forward File function called")  # Implement the actual logic
         message, client = kwargs['message'], kwargs['client']
 
-        self.client_lock.acquire()
-        if self.clients.get(client.nickname) is None:
-            raise NonFatalErrorException(NonFatalErrors.USR_DNE)
-        self.client_lock.release()
-
-        print(message.payload[0])
-        print(message.payload[1])
-        client.send_file(message.payload[0], message.payload[1])
+        with self.client_lock:
+            if self.clients.get(client.nickname) is None:
+                raise NonFatalErrorException(NonFatalErrors.USR_DNE)
+            print(message.payload[0])
+            print(message.payload[1])
+            client.send_file(message.payload[0], message.payload[1])
 
     def reject_file(self, **kwargs):
         print("Reject File called")
         message, client = kwargs['message'], kwargs['client']
-        self.client_lock.acquire()
-        if self.clients.get(client.nickname) is None:
-            raise NonFatalErrorException(NonFatalErrors.USR_DNE)
-        self.client_lock.release()
-        client.remove_file(message)
+        with self.client_lock:
+            if self.clients.get(client.nickname) is None:
+                raise NonFatalErrorException(NonFatalErrors.USR_DNE)
+            client.remove_file(message)
 
 
     def forward_file_q(self, **kwargs):
